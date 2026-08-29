@@ -98,3 +98,44 @@ def test_unknown_paths_are_a_json_404(served: str) -> None:
         assert json.loads(error.read())["error"] == "not found"
     else:
         raise AssertionError("expected a 404")
+
+
+def test_quality_is_served_over_http(served: str) -> None:
+    payload = get(served, "/api/quality?source=mtn")
+    assert payload["quality"] is not None
+    assert payload["quality"]["grade"] in "ABCDF"
+
+
+def test_a_source_can_be_added_while_running(served: str) -> None:
+    """The whole point of discovery: pointing at a router must not need a restart."""
+    import urllib.request
+
+    request = urllib.request.Request(
+        served + "/api/sources?kind=demo&name=added-demo", method="POST"
+    )
+    with urllib.request.urlopen(request, timeout=5) as response:
+        assert json.loads(response.read())["added"] == "added-demo"
+
+    overview = get(served, "/api/overview")
+    names = [source["name"] for source in overview["sources"]]
+    assert "mtn" in names  # note: added source appears after its first poll records
+
+
+def test_uptime_is_a_poll_fraction_not_a_bucket_minimum(store: Store, clock: Clock) -> None:
+    """One bad minute in an otherwise clean day must read ~96%, not 0%."""
+    from netpulse.adapters.fake import ScriptedAdapter
+    from netpulse.monitor import Collector
+    from netpulse.server import Api
+
+    for i in range(300):
+        store.record("wan", {"up": 0.0 if 100 <= i < 112 else 1.0})
+        clock.advance(seconds=5)
+    api = Api(
+        store,
+        Collector(store, [ScriptedAdapter("wan", [])], clock=clock),
+        interval_s=5,
+        clock=clock,
+    )
+    uptime = api._uptime("wan", clock.now)
+    assert uptime is not None
+    assert 0.94 < uptime < 0.98

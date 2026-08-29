@@ -351,6 +351,17 @@ class Store:
         expected = max(1, int((until - since).total_seconds() / interval_s))
         return Coverage(sampled=raw + rolled, expected=expected)
 
+    def values(self, source: str, metric: str, since: datetime, until: datetime) -> list[float]:
+        """Raw values in order, for percentile work. Raw only, on purpose: a rollup keeps
+        min/mean/max, and pretending percentiles out of those would be invention."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT value FROM samples WHERE source = ? AND metric = ? "
+                "AND at >= ? AND at < ? ORDER BY at",
+                (source, metric, _ts(since), _ts(until)),
+            ).fetchall()
+        return [row["value"] for row in rows]
+
     def sources(self) -> list[str]:
         with self._lock:
             rows = self._conn.execute(

@@ -50,26 +50,42 @@ def _number(value: object) -> float | None:
         return None
 
 
+#: ZTE firmware ships two API roots for the same command protocol: MC-series CPE uses
+#: /goform/goform_get_cmd_process, MF-series and many carrier builds use /reqproc/proc_get.
+API_PATHS = ("/goform/goform_get_cmd_process", "/reqproc/proc_get")
+
+
 class ZteAdapter:
     kind = "zte"
 
     def __init__(self, name: str, url: str = "http://192.168.0.1", *, fetch: Fetch = _urllib_fetch):
         self.name = name
-        self.base = url.rstrip("/")
+        # A pasted browser URL often carries the SPA route (http://192.168.0.1/#/).
+        self.base = url.split("#")[0].rstrip("/")
         self._fetch = fetch
+        self._api_path: str | None = None
+
+    def _query(self) -> dict[str, object]:
+        last: Exception | None = None
+        paths = (self._api_path,) if self._api_path else API_PATHS
+        for path in paths:
+            query = f"{self.base}{path}?isTest=false&multi_data=1&cmd={FIELDS}"
+            try:
+                # The Referer is required: the firmware answers an empty body without it.
+                payload = self._fetch(query, {"Referer": f"{self.base}/index.html"})
+                data = json.loads(payload or b"")
+            except (OSError, json.JSONDecodeError) as exc:
+                last = exc
+                continue
+            if isinstance(data, dict) and data:
+                self._api_path = path
+                return data
+        if last is not None:
+            raise AdapterError(f"router did not answer a known ZTE API: {last}") from last
+        raise AdapterError("router returned an empty reply (Referer guard, or rebooting)")
 
     def read(self) -> Reading:
-        # The Referer is required: the firmware answers an empty body without it.
-        query = f"{self.base}/goform/goform_get_cmd_process?isTest=false&multi_data=1&cmd={FIELDS}"
-        try:
-            payload = self._fetch(query, {"Referer": f"{self.base}/index.html"})
-            data = json.loads(payload or b"{}")
-        except OSError as exc:
-            raise AdapterError(f"router unreachable: {exc}") from exc
-        except json.JSONDecodeError as exc:
-            raise AdapterError(f"router returned unparseable JSON: {exc}") from exc
-        if not data:
-            raise AdapterError("router returned an empty reply (Referer guard, or rebooting)")
+        data = self._query()
 
         metrics: dict[str, float] = {
             "up": 1.0 if str(data.get("ppp_status", "")).lower() == "ppp_connected" else 0.0

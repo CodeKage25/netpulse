@@ -5,362 +5,537 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>NetPulse</title>
 <style>
-  /* Every asset is inline: this page must render during the outage it explains. */
-  :root {
-    color-scheme: light;
-    --surface: #fcfcfb; --panel: #ffffff; --border: #e8e7e3;
-    --text: #0b0b0b; --text-2: #52514e; --text-3: #8a8984;
-    --series-1: #2a78d6; --series-2: #eb6834;
+  /* Every asset is inline: this page must render during the outage it explains.
+     The instrument look — near-black ground, raised card surfaces, huge figures with
+     sparklines riding beside them — follows Dishylink's dashboard, which earned it. */
+  :root, :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #0b0b0c; --panel: #151517; --panel-2: #1c1c1f; --border: #26262a;
+    --text: #f5f5f4; --text-2: #a3a29e; --text-3: #6e6d69;
+    --down: #3987e5; --up: #199e70; --mono: #e8e8e6;
     --good: #0ca30c; --warning: #fab219; --serious: #ec835a; --critical: #d03b3b;
-    --grid: #eeede9; --band: rgba(208,59,59,0.10); --gap: rgba(138,137,132,0.08);
+    --grid: #232326; --band: rgba(208,59,59,0.14); --gapfill: rgba(163,162,158,0.05);
+    --down-fill: rgba(57,135,229,0.22); --up-fill: rgba(25,158,112,0.20);
+    --mono-fill: rgba(232,232,230,0.10);
   }
-  @media (prefers-color-scheme: dark) {
-    :root:where(:not([data-theme="light"])) {
-      color-scheme: dark;
-      --surface: #1a1a19; --panel: #222221; --border: #34342f;
-      --text: #ffffff; --text-2: #c3c2b7; --text-3: #8a8984;
-      --series-1: #3987e5; --series-2: #d95926;
-      --grid: #2c2c29; --band: rgba(208,59,59,0.16); --gap: rgba(195,194,183,0.07);
-    }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --bg: #f4f4f2; --panel: #ffffff; --panel-2: #f7f7f5; --border: #e4e3df;
+    --text: #0b0b0b; --text-2: #52514e; --text-3: #8a8984;
+    --down: #2a78d6; --up: #1baf7a; --mono: #3a3a38;
+    --grid: #ececea; --band: rgba(208,59,59,0.10); --gapfill: rgba(82,81,78,0.05);
+    --down-fill: rgba(42,120,214,0.14); --up-fill: rgba(27,175,122,0.14);
+    --mono-fill: rgba(58,58,56,0.08);
   }
   * { box-sizing: border-box; }
+  html { background: var(--bg); }
   body {
-    margin: 0; background: var(--surface); color: var(--text);
-    font: 14px/1.45 -apple-system, "Segoe UI", system-ui, sans-serif;
+    margin: 0; background: var(--bg); color: var(--text); min-height: 100vh;
+    font: 13.5px/1.45 -apple-system, "Segoe UI", "Inter", system-ui, sans-serif;
   }
-  header {
-    display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;
-    padding: 18px 22px 6px;
+  .shell { max-width: 1280px; margin: 0 auto; padding: 0 20px 60px; }
+  header { display: flex; align-items: center; gap: 12px; padding: 20px 2px 18px; }
+  header .brand { display: flex; align-items: center; gap: 9px; font-weight: 700;
+    font-size: 15px; letter-spacing: 0.06em; }
+  .pulse-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--good);
+    box-shadow: 0 0 8px var(--good); }
+  .pulse-dot.down { background: var(--critical); box-shadow: 0 0 8px var(--critical); }
+  header .meta { color: var(--text-2); font-size: 12.5px; display: flex; gap: 8px;
+    align-items: center; flex-wrap: wrap; }
+  header .meta b { color: var(--text); font-weight: 600; }
+  .tag { border: 1px solid var(--border); border-radius: 6px; padding: 1px 7px;
+    font-size: 11px; color: var(--text-2); letter-spacing: 0.04em; }
+  .spacer { flex: 1; }
+  .iconbtn {
+    background: var(--panel); border: 1px solid var(--border); color: var(--text-2);
+    border-radius: 8px; padding: 6px 11px; font: inherit; font-size: 12.5px; cursor: pointer;
+    transition: color 0.15s, border-color 0.15s;
   }
-  header h1 { font-size: 17px; margin: 0; letter-spacing: 0.2px; }
-  header .sub { color: var(--text-2); font-size: 13px; }
-  .status-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%;
-    background: var(--good); margin-right: 6px; vertical-align: 1px; }
-  .status-dot.down { background: var(--critical); }
-  main { padding: 8px 22px 40px; max-width: 1180px; margin: 0 auto; }
-  .ranges { display: flex; gap: 6px; margin: 10px 0 16px; }
-  .ranges button {
-    border: 1px solid var(--border); background: var(--panel); color: var(--text-2);
-    padding: 5px 12px; border-radius: 7px; font: inherit; font-size: 12.5px; cursor: pointer;
+  .iconbtn:hover { color: var(--text); border-color: var(--text-3); }
+  .iconbtn:disabled { opacity: 0.5; cursor: wait; }
+
+  /* ------------------------------------------------ stat tiles */
+  .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(196px, 1fr));
+    gap: 12px; margin-bottom: 18px; }
+  .tile {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 13px;
+    padding: 13px 15px 11px; min-height: 96px; display: flex; flex-direction: column;
   }
-  .ranges button.on { color: var(--text); border-color: var(--text-3); font-weight: 600; }
-  .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
-    gap: 10px; margin-bottom: 16px; }
-  .tile { background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
-    padding: 12px 14px 8px; }
-  .tile .label { font-size: 11.5px; color: var(--text-2); text-transform: uppercase;
-    letter-spacing: 0.5px; }
-  .tile .value { font-size: 24px; font-weight: 650; margin: 2px 0 0; font-variant-numeric: tabular-nums; }
-  .tile .unit { font-size: 13px; font-weight: 400; color: var(--text-2); margin-left: 2px; }
-  .tile svg { display: block; width: 100%; height: 26px; margin-top: 4px; }
-  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-  @media (max-width: 860px) { .grid2 { grid-template-columns: 1fr; } }
-  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
-    padding: 14px 16px; margin-bottom: 14px; }
-  .panel h2 { font-size: 13px; margin: 0 0 4px; color: var(--text-2); font-weight: 600; }
-  .panel .note { font-size: 11.5px; color: var(--text-3); }
-  .legend { display: flex; gap: 14px; font-size: 12px; color: var(--text-2); margin: 4px 0 2px; }
-  .legend .key { display: inline-block; width: 14px; height: 3px; border-radius: 2px;
-    vertical-align: 3px; margin-right: 5px; }
-  .chart-wrap { position: relative; }
-  .chart-wrap svg { display: block; width: 100%; height: 170px; }
-  .tooltip { position: absolute; pointer-events: none; background: var(--panel);
-    border: 1px solid var(--border); border-radius: 7px; padding: 6px 9px; font-size: 12px;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.12); display: none; white-space: nowrap; z-index: 5; }
-  .tooltip .t { color: var(--text-3); font-size: 11px; }
-  .insight { display: flex; gap: 10px; padding: 9px 0; border-top: 1px solid var(--border); }
-  .insight:first-of-type { border-top: 0; }
-  .insight .icon { font-size: 15px; line-height: 1.4; }
-  .insight .title { font-weight: 600; font-size: 13px; }
-  .insight .detail { color: var(--text-2); font-size: 12.5px; margin-top: 1px; }
-  .event { display: flex; gap: 10px; align-items: baseline; padding: 6px 0;
-    border-top: 1px solid var(--border); font-size: 12.5px; }
-  .event:first-of-type { border-top: 0; }
-  .event .when { color: var(--text-3); font-variant-numeric: tabular-nums; min-width: 118px; }
-  .badge { font-size: 11px; padding: 1px 8px; border-radius: 9px; font-weight: 600; }
-  .badge.critical { color: var(--critical); border: 1px solid var(--critical); }
-  .badge.warning { color: var(--serious); border: 1px solid var(--serious); }
-  .badge.open { background: var(--critical); color: #fff; border: 0; }
-  .facts { display: flex; gap: 18px; flex-wrap: wrap; font-size: 12.5px; color: var(--text-2); }
-  .facts b { color: var(--text); font-weight: 600; }
-  .empty { color: var(--text-3); font-size: 12.5px; padding: 8px 0; }
-  select, .btn { font: inherit; background: var(--panel); color: var(--text);
-    border: 1px solid var(--border); border-radius: 7px; padding: 4px 8px; }
-  .btn { cursor: pointer; font-size: 12.5px; color: var(--text-2); }
-  .btn:disabled { opacity: 0.5; cursor: wait; }
-  .ylabel { position: absolute; left: 0; width: 38px; text-align: right; font-size: 11px;
+  .tile .label { font-size: 11px; color: var(--text-2); text-transform: uppercase;
+    letter-spacing: 0.08em; font-weight: 600; }
+  .tile .row { display: flex; align-items: center; gap: 8px; margin-top: 5px; }
+  .tile .value { font-size: 29px; font-weight: 700; letter-spacing: -0.01em;
+    font-variant-numeric: tabular-nums; line-height: 1.05; white-space: nowrap; }
+  .tile .unit { font-size: 12px; font-weight: 500; color: var(--text-2); margin-left: 4px; }
+  .tile .spark { flex: 1; min-width: 34px; height: 34px; }
+  .tile .spark svg { width: 100%; height: 100%; display: block; }
+  .tile .caption { font-size: 11px; color: var(--text-3); margin-top: auto; padding-top: 5px; }
+
+  /* ------------------------------------------------ layout */
+  .cols { display: grid; grid-template-columns: 1fr 380px; gap: 14px; align-items: start; }
+  @media (max-width: 1020px) { .cols { grid-template-columns: 1fr; } }
+  .panel {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 13px;
+    padding: 15px 17px 13px; margin-bottom: 14px;
+  }
+  .panel-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px;
+    flex-wrap: wrap; }
+  .panel-head h2 { font-size: 13.5px; margin: 0; font-weight: 650; }
+  .panel-head .hint { color: var(--text-3); font-size: 11px; }
+  .seg { display: flex; background: var(--panel-2); border: 1px solid var(--border);
+    border-radius: 8px; padding: 2px; margin-left: auto; }
+  .seg button { border: 0; background: transparent; color: var(--text-3); font: inherit;
+    font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: 6px; cursor: pointer; }
+  .seg button.on { background: var(--panel); color: var(--text);
+    box-shadow: 0 1px 4px rgba(0,0,0,0.35); }
+  .legend { display: flex; gap: 14px; font-size: 11.5px; color: var(--text-2); margin: 2px 0 0; }
+  .legend .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+    margin-right: 5px; vertical-align: -1px; }
+  .chart { position: relative; margin-top: 6px; padding-left: 34px; padding-bottom: 14px; }
+  .chart svg.plot { display: block; width: 100%; }
+  .ylab { position: absolute; left: 0; width: 28px; text-align: right; font-size: 10.5px;
     color: var(--text-3); transform: translateY(-50%); pointer-events: none;
     font-variant-numeric: tabular-nums; }
-  .device { display: flex; gap: 10px; align-items: baseline; padding: 6px 0;
-    border-top: 1px solid var(--border); font-size: 12.5px; }
+  .xlab { position: absolute; bottom: 0; font-size: 10.5px; color: var(--text-3);
+    transform: translateX(-50%); pointer-events: none; font-variant-numeric: tabular-nums; }
+  .note { font-size: 11px; color: var(--text-3); margin-top: 4px; }
+  .tooltip { position: absolute; pointer-events: none; background: var(--panel-2);
+    border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px; font-size: 12px;
+    box-shadow: 0 4px 18px rgba(0,0,0,0.45); display: none; white-space: nowrap; z-index: 5; }
+  .tooltip .t { color: var(--text-3); font-size: 10.5px; margin-bottom: 2px; }
+
+  /* ------------------------------------------------ right column */
+  .grade-row { display: flex; align-items: center; gap: 16px; }
+  .grade { font-size: 46px; font-weight: 800; line-height: 1; }
+  .grade.A { color: var(--good); } .grade.B { color: var(--up); }
+  .grade.C { color: var(--warning); } .grade.D { color: var(--serious); }
+  .grade.F { color: var(--critical); }
+  .grade-detail { font-size: 11.5px; color: var(--text-2); line-height: 1.7; }
+  .grade-detail b { color: var(--text); font-variant-numeric: tabular-nums; }
+  .kv { display: grid; grid-template-columns: auto 1fr; gap: 3px 14px; font-size: 12.5px; }
+  .kv .k { color: var(--text-3); }
+  .kv .v { color: var(--text); font-weight: 600; text-align: right;
+    font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; }
+  .event { display: flex; gap: 9px; align-items: baseline; padding: 7px 0;
+    border-top: 1px solid var(--border); font-size: 12px; }
+  .event:first-of-type { border-top: 0; }
+  .event .when { color: var(--text-3); font-variant-numeric: tabular-nums;
+    font-size: 11px; min-width: 74px; }
+  .sev { width: 8px; height: 8px; border-radius: 50%; flex: none; align-self: center; }
+  .sev.critical { background: var(--critical); } .sev.warning { background: var(--serious); }
+  .sev.info { background: var(--text-3); }
+  .event .dur { margin-left: auto; color: var(--text-3); font-size: 11px;
+    font-variant-numeric: tabular-nums; }
+  .event .live { margin-left: auto; color: var(--critical); font-size: 11px; font-weight: 700; }
+  .insight { display: flex; gap: 10px; padding: 8px 0; border-top: 1px solid var(--border); }
+  .insight:first-of-type { border-top: 0; }
+  .insight .bar { width: 3px; border-radius: 2px; flex: none; }
+  .insight .title { font-weight: 650; font-size: 12.5px; }
+  .insight .detail { color: var(--text-2); font-size: 12px; margin-top: 2px; }
+  .device { display: flex; gap: 10px; align-items: baseline; padding: 7px 0;
+    border-top: 1px solid var(--border); font-size: 12px; }
   .device:first-of-type { border-top: 0; }
-  .device .name { font-weight: 600; min-width: 140px; }
-  .device .meta { color: var(--text-3); font-variant-numeric: tabular-nums; }
+  .device .name { font-weight: 600; }
+  .device .meta { color: var(--text-3); font-size: 11px; font-variant-numeric: tabular-nums; }
+  .empty { color: var(--text-3); font-size: 12px; padding: 6px 0; }
+
+  /* ------------------------------------------------ settings drawer */
+  .drawer-back { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 20; }
+  .drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(400px, 92vw);
+    background: var(--panel); border-left: 1px solid var(--border); z-index: 21;
+    padding: 20px; overflow-y: auto; }
+  .drawer h2 { font-size: 15px; margin: 0 0 4px; }
+  .drawer .sub { color: var(--text-2); font-size: 12px; margin-bottom: 16px; }
+  .srcrow { display: flex; align-items: center; gap: 10px; padding: 9px 0;
+    border-top: 1px solid var(--border); font-size: 12.5px; }
+  .srcrow:first-of-type { border-top: 0; }
+  .srcrow .k { color: var(--text-3); font-size: 11px; }
+  .found { background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px;
+    padding: 10px 12px; margin-top: 10px; display: flex; align-items: center; gap: 10px;
+    font-size: 12.5px; }
+  select {
+    font: inherit; background: var(--panel); color: var(--text);
+    border: 1px solid var(--border); border-radius: 8px; padding: 5px 9px; font-size: 12.5px;
+  }
 </style>
 </head>
 <body>
-<header>
-  <h1><span class="status-dot" id="dot"></span>NetPulse</h1>
-  <span class="sub" id="subtitle">connecting…</span>
-  <span style="flex:1"></span>
-  <button class="btn" id="speedtest">Speed test</button>
-  <select id="source"></select>
-</header>
-<main>
-  <div class="ranges" id="ranges"></div>
+<div class="shell">
+  <header>
+    <div class="brand"><span class="pulse-dot" id="dot"></span>NetPulse</div>
+    <div class="meta" id="headmeta"></div>
+    <div class="spacer"></div>
+    <button class="iconbtn" id="speedtest" title="Moves ~30 MB of real data">Speed test</button>
+    <select id="source" hidden></select>
+    <button class="iconbtn" id="theme" title="Theme">◐</button>
+    <button class="iconbtn" id="settings" title="Sources">⚙</button>
+  </header>
+
   <div class="tiles" id="tiles"></div>
 
-  <div class="panel">
-    <h2>Latency</h2>
-    <div class="legend"><span><span class="key" style="background:var(--series-1)"></span>internet</span></div>
-    <div class="chart-wrap" id="latency"></div>
-    <div class="note" id="latency-note"></div>
-  </div>
+  <div class="cols">
+    <div><!-- ------------------------------- left: charts -->
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Throughput</h2>
+          <div class="legend">
+            <span><span class="dot" style="background:var(--down)"></span>download</span>
+            <span><span class="dot" style="background:var(--up)"></span>upload</span>
+          </div>
+          <div class="seg"></div>
+        </div>
+        <div class="chart" id="throughput"></div>
+      </div>
 
-  <div class="panel">
-    <h2>Throughput</h2>
-    <div class="legend">
-      <span><span class="key" style="background:var(--series-1)"></span>download</span>
-      <span><span class="key" style="background:var(--series-2)"></span>upload</span>
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Latency</h2>
+          <span class="hint">worst per bucket · red bands = outages</span>
+          <div class="seg"></div>
+        </div>
+        <div class="chart" id="latency"></div>
+        <div class="note" id="latency-note"></div>
+      </div>
+
+      <div class="panel" id="signal-panel" hidden>
+        <div class="panel-head">
+          <h2>Signal</h2>
+          <span class="hint">read at the router</span>
+          <div class="seg"></div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px">
+          <div>
+            <div class="legend"><span><span class="dot" style="background:var(--mono)"></span>RSRP · dBm</span></div>
+            <div class="chart" id="rsrp"></div>
+          </div>
+          <div>
+            <div class="legend"><span><span class="dot" style="background:var(--mono)"></span>SINR · dB</span></div>
+            <div class="chart" id="sinr"></div>
+          </div>
+        </div>
+      </div>
     </div>
-    <div class="chart-wrap" id="throughput"></div>
-  </div>
 
-  <div class="grid2" id="signal-panels" hidden>
-    <div class="panel"><h2>Signal strength · RSRP</h2><div class="chart-wrap" id="rsrp"></div></div>
-    <div class="panel"><h2>Signal quality · SINR</h2><div class="chart-wrap" id="sinr"></div></div>
-  </div>
+    <div><!-- ------------------------------- right: instruments -->
+      <div class="panel">
+        <div class="panel-head"><h2>Connection quality</h2><span class="hint">last hour</span></div>
+        <div id="quality"><div class="empty">Measuring — a fair grade needs a little history.</div></div>
+      </div>
 
-  <div class="grid2">
-    <div class="panel"><h2>Diagnosis</h2><div id="insights"><div class="empty">Gathering evidence…</div></div></div>
-    <div class="panel"><h2>Events</h2><div id="events"><div class="empty">No outages recorded.</div></div></div>
-  </div>
+      <div class="panel">
+        <div class="panel-head"><h2>Connection</h2></div>
+        <div class="kv" id="facts"></div>
+      </div>
 
-  <div class="panel" id="devices-panel" hidden>
-    <h2>Devices on the network</h2>
-    <div id="devices"></div>
-  </div>
+      <div class="panel">
+        <div class="panel-head"><h2>Diagnosis</h2></div>
+        <div id="insights"><div class="empty">Gathering evidence…</div></div>
+      </div>
 
-  <div class="panel"><h2>Connection</h2><div class="facts" id="facts"></div></div>
-</main>
+      <div class="panel">
+        <div class="panel-head"><h2>Events &amp; outages</h2><span class="hint" id="evcount"></span></div>
+        <div id="events"><div class="empty">No outages recorded.</div></div>
+      </div>
+
+      <div class="panel" id="devices-panel" hidden>
+        <div class="panel-head"><h2>Devices</h2><span class="hint" id="devcount"></span></div>
+        <div id="devices"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="drawer-root" hidden>
+  <div class="drawer-back" id="drawer-back"></div>
+  <div class="drawer">
+    <h2>Sources</h2>
+    <div class="sub">What NetPulse is watching. The probe measures the connection this
+      machine is on; a router adapter reads signal, data and devices from the box itself.</div>
+    <div id="srclist"></div>
+    <div style="margin-top:18px">
+      <button class="iconbtn" id="scan">Scan for routers</button>
+      <span id="scanstate" style="font-size:11.5px;color:var(--text-3)"></span>
+    </div>
+    <div id="scanresults"></div>
+  </div>
+</div>
 
 <script>
 "use strict";
-const RANGES = [["15m", 15], ["1h", 60], ["6h", 360], ["24h", 1440]];
-let state = { source: null, minutes: 60, overview: null };
+const RANGES = [["15m", 15], ["1h", 60], ["6h", 360], ["24h", 1440], ["7d", 10080]];
+const state = { source: null, minutes: 15 };
 
 const fmt = {
-  ms: v => v == null ? "–" : v >= 1000 ? (v / 1000).toFixed(1) + " s" : Math.round(v) + " ms",
-  mbps: v => v == null ? "–" : ((v * 8) / 1e6).toFixed(v * 8 >= 1e7 ? 0 : 1),
+  ms: v => v == null ? "–" : v >= 1000 ? (v / 1000).toFixed(1) + "s" : Math.round(v) + "ms",
+  mbps: v => v == null ? "–" : (v * 8 / 1e6) >= 100 ? Math.round(v * 8 / 1e6) : (v * 8 / 1e6).toFixed(1),
   bytes: v => {
     if (v == null) return "–";
     const units = ["B", "KB", "MB", "GB", "TB"]; let i = 0;
     while (v >= 1000 && i < units.length - 1) { v /= 1000; i++; }
     return v.toFixed(v >= 100 ? 0 : 1) + " " + units[i];
   },
+  axis: v => Math.abs(v) >= 1000 ? (v / 1000).toFixed(0) + "k" : Math.abs(v) >= 10 ? Math.round(v) : (Math.round(v * 10) / 10),
   when: iso => new Date(iso).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }),
+  hm: iso => new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false }),
   clock: iso => new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
 };
-const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+async function json(url, opts) { const r = await fetch(url, opts); if (!r.ok) throw new Error(url); return r.json(); }
 
-/* ---------- charting: SVG line with gap-honest paths, outage bands, crosshair ---------- */
+/* ============================== charts ==============================
+   Dishylink-style area charts: a 2px line over a soft gradient fill anchored to the
+   baseline, honest gaps (a null breaks line and fill both), outage bands, HTML axis
+   labels (SVG text would be squashed by the non-uniform scaling), crosshair tooltip. */
 
-function paths(points, x, y) {
-  // A gap in recording is a break in the line — null never interpolates across.
-  let d = "", drawing = false;
-  for (const [i, v] of points.entries()) {
-    if (v == null) { drawing = false; continue; }
-    d += (drawing ? "L" : "M") + x(i).toFixed(1) + " " + y(v).toFixed(1);
-    drawing = true;
-  }
-  return d;
+function runs(points) {
+  const out = []; let current = null;
+  points.forEach((v, i) => {
+    if (v == null) { current = null; return; }
+    if (!current) { current = []; out.push(current); }
+    current.push(i);
+  });
+  return out;
 }
 
-function lineChart(el, seriesList, opts) {
-  const { times, bands = [], format = fmt.ms, floor = 0 } = opts;
-  const W = 1000, H = 170, pad = { l: 44, r: 8, t: 10, b: 20 };
+function chart(el, seriesList, opts) {
+  const { times, bands = [], format = fmt.axis, tip = fmt.ms, height = 190, floor = null } = opts;
+  const W = 1000, H = height, pad = { l: 6, r: 6, t: 12, b: 8 };
   const n = Math.max(1, times.length - 1);
   const all = seriesList.flatMap(s => s.points).filter(v => v != null);
-  const hi = all.length ? Math.max(...all) : 1;
-  const lo = Math.min(floor, all.length ? Math.min(...all) : 0);
-  const top = hi + (hi - lo) * 0.08 || 1;
+  const dataHi = all.length ? Math.max(...all) : 1;
+  const dataLo = all.length ? Math.min(...all) : 0;
+  const lo = floor != null ? Math.min(floor, dataLo) : (dataLo >= 0 ? 0 : dataLo * 1.08);
+  const top = dataHi + (dataHi - lo) * 0.10 || 1;
   const x = i => pad.l + (i / n) * (W - pad.l - pad.r);
   const y = v => pad.t + (1 - (v - lo) / (top - lo)) * (H - pad.t - pad.b);
+  const baseline = H - pad.b;
 
-  let svg = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">`;
+  let svg = `<svg class="plot" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="height:${H}px">`;
   for (const [a, b] of bands) {
-    svg += `<rect x="${x(a)}" y="${pad.t}" width="${Math.max(2, x(b) - x(a))}" height="${H - pad.t - pad.b}" fill="var(--band)"/>`;
+    svg += `<rect x="${x(a).toFixed(1)}" y="${pad.t}" width="${Math.max(3, x(b) - x(a)).toFixed(1)}" height="${H - pad.t - pad.b}" fill="var(--band)"/>`;
   }
-  for (const [i, v] of (seriesList[0]?.points || []).entries()) {
-    if (v == null) svg += `<rect x="${x(Math.max(0, i - 0.5))}" y="${pad.t}" width="${(W - pad.l - pad.r) / n}" height="${H - pad.t - pad.b}" fill="var(--gap)"/>`;
-  }
-  let labels = "";
+  (seriesList[0]?.points || []).forEach((v, i) => {
+    if (v == null) svg += `<rect x="${x(Math.max(0, i - 0.5)).toFixed(1)}" y="${pad.t}" width="${((W - pad.l - pad.r) / n).toFixed(1)}" height="${H - pad.t - pad.b}" fill="var(--gapfill)"/>`;
+  });
+  let ylabs = "";
   for (let g = 0; g <= 3; g++) {
     const value = lo + ((top - lo) * g) / 3, yy = y(value);
-    svg += `<line x1="${pad.l}" y1="${yy}" x2="${W - pad.r}" y2="${yy}" stroke="var(--grid)" stroke-width="1"/>`;
-    // Labels live in HTML, not the SVG: preserveAspectRatio="none" stretches the plot
-    // non-uniformly, and squashed text is what that does to <text> elements.
-    labels += `<span class="ylabel" style="top:${(yy / H) * 100}%">${format(value)}</span>`;
+    svg += `<line x1="${pad.l}" y1="${yy.toFixed(1)}" x2="${W - pad.r}" y2="${yy.toFixed(1)}" stroke="var(--grid)" stroke-width="1"/>`;
+    ylabs += `<span class="ylab" style="top:${(yy / H) * 100}%">${format(value)}</span>`;
   }
   for (const s of seriesList) {
-    svg += `<path d="${paths(s.points, x, y)}" fill="none" stroke="${s.color}" stroke-width="2" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`;
+    for (const run of runs(s.points)) {
+      if (run.length === 1) {
+        const i = run[0];
+        svg += `<circle cx="${x(i).toFixed(1)}" cy="${y(s.points[i]).toFixed(1)}" r="2.5" fill="${s.color}"/>`;
+        continue;
+      }
+      let line = "", area = `M${x(run[0]).toFixed(1)} ${baseline.toFixed(1)}`;
+      run.forEach((i, k) => {
+        line += `${k === 0 ? "M" : "L"}${x(i).toFixed(1)} ${y(s.points[i]).toFixed(1)}`;
+        area += `L${x(i).toFixed(1)} ${y(s.points[i]).toFixed(1)}`;
+      });
+      area += `L${x(run[run.length - 1]).toFixed(1)} ${baseline.toFixed(1)}Z`;
+      if (s.fill) svg += `<path d="${area}" fill="${s.fill}"/>`;
+      svg += `<path d="${line}" fill="none" stroke="${s.color}" stroke-width="2" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`;
+    }
   }
-  svg += `<line id="cross" x1="0" x2="0" y1="${pad.t}" y2="${H - pad.t - pad.b + pad.t}" stroke="var(--text-3)" stroke-width="1" opacity="0"/>`;
-  el.innerHTML = svg + `</svg>` + labels + `<div class="tooltip"></div>`;
+  svg += `<line id="cross" y1="${pad.t}" y2="${H - pad.b}" stroke="var(--text-3)" stroke-width="1" opacity="0"/>`;
+  svg += `</svg>`;
 
-  const node = el.querySelector("svg"), tip = el.querySelector(".tooltip"), cross = el.querySelector("#cross");
+  let xlabs = "";
+  const ticks = Math.min(5, times.length);
+  for (let t = 0; t < ticks; t++) {
+    const i = Math.round((t / Math.max(1, ticks - 1)) * (times.length - 1));
+    // Edge labels clamp inward instead of centring, so the first cannot run under the
+    // y-axis column and the last cannot spill past the plot.
+    const shift = t === 0 ? "0%" : t === ticks - 1 ? "-100%" : "-50%";
+    if (times[i]) xlabs += `<span class="xlab" data-frac="${(x(i) / W).toFixed(4)}" style="transform:translateX(${shift})">${fmt.hm(times[i])}</span>`;
+  }
+
+  el.innerHTML = svg + ylabs + xlabs + `<div class="tooltip"></div>`;
+  const place = () => {
+    const plot = el.querySelector("svg.plot").getBoundingClientRect();
+    const box = el.getBoundingClientRect();
+    for (const lab of el.querySelectorAll(".xlab")) {
+      const frac = Number(lab.dataset.frac);
+      lab.style.left = (plot.left - box.left + frac * plot.width) + "px";
+    }
+  };
+  place();
+
+  const node = el.querySelector("svg"), tt = el.querySelector(".tooltip"), cross = el.querySelector("#cross");
   node.addEventListener("mousemove", event => {
     const rect = node.getBoundingClientRect();
     const fx = (event.clientX - rect.left) / rect.width * W;
     const i = Math.round(((fx - pad.l) / (W - pad.l - pad.r)) * n);
-    if (i < 0 || i >= times.length) { tip.style.display = "none"; cross.setAttribute("opacity", 0); return; }
-    cross.setAttribute("x1", x(i)); cross.setAttribute("x2", x(i)); cross.setAttribute("opacity", 0.5);
-    const rows = seriesList.map(s => {
+    if (i < 0 || i >= times.length) { tt.style.display = "none"; cross.setAttribute("opacity", 0); return; }
+    cross.setAttribute("x1", x(i)); cross.setAttribute("x2", x(i)); cross.setAttribute("opacity", 0.45);
+    tt.innerHTML = `<div class="t">${fmt.clock(times[i])}</div>` + seriesList.map(s => {
       const v = s.points[i];
-      return `<div><span class="key" style="background:${s.color};display:inline-block;width:10px;height:3px;border-radius:2px;margin-right:5px;vertical-align:2px"></span>${s.name}: <b>${v == null ? "no data" : opts.tipFormat(v)}</b></div>`;
+      return `<div><span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${s.color};margin-right:6px"></span>${s.name}: <b>${v == null ? "no data" : tip(v)}</b></div>`;
     }).join("");
-    tip.innerHTML = `<div class="t">${fmt.clock(times[i])}</div>${rows}`;
-    tip.style.display = "block";
+    tt.style.display = "block";
     const px = (x(i) / W) * rect.width;
-    tip.style.left = Math.min(rect.width - tip.offsetWidth - 4, Math.max(4, px + 12)) + "px";
-    tip.style.top = "10px";
+    tt.style.left = Math.min(rect.width - tt.offsetWidth - 6, Math.max(6, px + 14)) + "px";
+    tt.style.top = "8px";
   });
-  node.addEventListener("mouseleave", () => { tip.style.display = "none"; cross.setAttribute("opacity", 0); });
+  node.addEventListener("mouseleave", () => { tt.style.display = "none"; cross.setAttribute("opacity", 0); });
 }
 
-function sparkline(points, color) {
-  const W = 100, H = 26, vals = points.filter(v => v != null);
-  if (!vals.length) return "<svg></svg>";
-  const hi = Math.max(...vals), lo = Math.min(...vals), span = hi - lo || 1;
-  const x = i => (i / Math.max(1, points.length - 1)) * W;
-  const y = v => 2 + (1 - (v - lo) / span) * (H - 4);
-  return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none"><path d="${paths(points, x, y)}" fill="none" stroke="${color}" stroke-width="1.5" vector-effect="non-scaling-stroke"/></svg>`;
+function spark(points, color) {
+  const vals = points.filter(v => v != null);
+  if (vals.length < 2) return "";
+  const W = 100, H = 34, hi = Math.max(...vals), lo = Math.min(...vals), span = hi - lo || 1;
+  const x = i => (i / (points.length - 1)) * W;
+  const y = v => 3 + (1 - (v - lo) / span) * (H - 6);
+  let d = "";
+  for (const run of runs(points)) {
+    run.forEach((i, k) => { d += `${k === 0 ? "M" : "L"}${x(i).toFixed(1)} ${y(points[i]).toFixed(1)}`; });
+  }
+  return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none"><path d="${d}" fill="none" stroke="${color}" stroke-width="1.8" vector-effect="non-scaling-stroke" stroke-linejoin="round"/></svg>`;
 }
 
-/* ---------------------------------- data plumbing ---------------------------------- */
+/* ============================== data ============================== */
 
-async function json(url) { const r = await fetch(url); if (!r.ok) throw new Error(url); return r.json(); }
-
-function tile(label, value, unit, spark, color) {
+function tile(label, value, unit, sparkline, color, caption) {
   return `<div class="tile"><div class="label">${label}</div>
-    <div class="value">${value}<span class="unit">${unit}</span></div>
-    ${spark ? sparkline(spark, color) : ""}</div>`;
+    <div class="row"><span class="value">${value}<span class="unit">${unit}</span></span>
+    <span class="spark">${sparkline ? spark(sparkline, color) : ""}</span></div>
+    <div class="caption">${caption || ""}</div></div>`;
 }
 
+let firstPaintDone = false;
 async function refresh() {
   const overview = await json("/api/overview");
-  state.overview = overview;
   const picker = document.getElementById("source");
+  picker.hidden = overview.sources.length < 2;
   if (picker.options.length !== overview.sources.length) {
-    picker.innerHTML = overview.sources.map(s => `<option value="${s.name}">${s.name} (${s.kind})</option>`).join("");
+    picker.innerHTML = overview.sources.map(s => `<option value="${s.name}">${s.name}</option>`).join("");
   }
+  // Prefer a router source once discovery finds one: it carries signal and data.
   if (!state.source || !overview.sources.some(s => s.name === state.source)) {
-    state.source = overview.sources[0]?.name;
+    const router = overview.sources.find(s => s.kind === "huawei" || s.kind === "zte");
+    state.source = (router || overview.sources[0])?.name;
   }
   picker.value = state.source;
   const src = overview.sources.find(s => s.name === state.source);
   if (!src) return;
 
-  document.getElementById("dot").className = "status-dot" + (src.up ? "" : " down");
-  const operator = src.texts["net.operator"], type = src.texts["net.type"];
-  document.getElementById("subtitle").textContent =
-    (src.up ? "online" : "OFFLINE") + (operator ? " · " + operator : "") + (type ? " · " + type : "");
+  document.getElementById("dot").className = "pulse-dot" + (src.up ? "" : " down");
+  const parts = [`<b>${src.up ? "online" : "offline"}</b>`];
+  if (src.texts["net.operator"]) parts.push(src.texts["net.operator"]);
+  if (src.texts["net.type"]) parts.push(`<span class="tag">${src.texts["net.type"]}</span>`);
+  if (src.texts["signal.band"]) parts.push(`<span class="tag">${src.texts["signal.band"]}</span>`);
+  if (src.uptime_24h != null) parts.push(`up ${(src.uptime_24h * 100).toFixed(1)}% · 24h`);
+  document.getElementById("headmeta").innerHTML = parts.join(" · ");
 
-  const m = src.latest, spark = src.sparklines;
-  const blue = css("--series-1"), orange = css("--series-2");
+  const m = src.latest, sp = src.sparklines;
+  const down = css("--down"), up = css("--up"), mono = css("--mono");
   let tiles = "";
-  if (m["latency.internet_ms"] != null)
-    tiles += tile("Latency", Math.round(m["latency.internet_ms"]), "ms", spark["latency.internet_ms"], blue);
   if (m["traffic.down_bytes_s"] != null)
-    tiles += tile("Download", fmt.mbps(m["traffic.down_bytes_s"]), "Mbps", spark["traffic.down_bytes_s"], blue);
+    tiles += tile("Download", fmt.mbps(m["traffic.down_bytes_s"]), "Mbps", sp["traffic.down_bytes_s"], down, "current traffic");
   if (m["traffic.up_bytes_s"] != null)
-    tiles += tile("Upload", fmt.mbps(m["traffic.up_bytes_s"]), "Mbps", spark["traffic.up_bytes_s"], orange);
-  if (m["signal.sinr_db"] != null)
-    tiles += tile("SINR", m["signal.sinr_db"].toFixed(0), "dB", spark["signal.sinr_db"], blue);
+    tiles += tile("Upload", fmt.mbps(m["traffic.up_bytes_s"]), "Mbps", sp["traffic.up_bytes_s"], up, "current traffic");
+  if (m["latency.internet_ms"] != null)
+    tiles += tile("Latency", Math.round(m["latency.internet_ms"]), "ms", sp["latency.internet_ms"], mono, "to the internet, live");
   if (m["signal.rsrp_dbm"] != null)
-    tiles += tile("Signal", Math.round(m["signal.rsrp_dbm"]), "dBm", spark["signal.rsrp_dbm"], blue);
+    tiles += tile("Signal", Math.round(m["signal.rsrp_dbm"]), "dBm", sp["signal.rsrp_dbm"], mono, "RSRP at the router");
+  if (m["signal.sinr_db"] != null)
+    tiles += tile("Quality", m["signal.sinr_db"].toFixed(0), "dB", sp["signal.sinr_db"], mono, "SINR — higher is cleaner");
   if (m["loss.pct"] != null)
-    tiles += tile("Loss", m["loss.pct"].toFixed(0), "%", spark["loss.pct"], orange);
+    tiles += tile("Ping success", (100 - m["loss.pct"]).toFixed(0), "%", null, mono, "last probe round");
   if (m["data.month_down_bytes"] != null)
-    tiles += tile("Data this month", fmt.bytes(m["data.month_down_bytes"] + (m["data.month_up_bytes"] || 0)), "", null, blue);
-  if (src.uptime_24h != null)
-    tiles += tile("Uptime · 24h", (src.uptime_24h * 100).toFixed(1), "%", null, blue);
+    tiles += tile("Data this month", fmt.bytes(m["data.month_down_bytes"] + (m["data.month_up_bytes"] || 0)), "", null, down, "counted by the router");
   if (m["speedtest.down_bytes_s"] != null)
-    tiles += tile("Last speed test", fmt.mbps(m["speedtest.down_bytes_s"]), "Mbps ↓", null, blue);
+    tiles += tile("Speed test", fmt.mbps(m["speedtest.down_bytes_s"]), "Mbps ↓", null, down,
+      `↑ ${fmt.mbps(m["speedtest.up_bytes_s"])} Mbps — on demand`);
   document.getElementById("tiles").innerHTML = tiles;
-
-  await Promise.all([drawCharts(), drawInsights(), drawEvents(), drawDevices()]);
 
   const facts = [];
   for (const [key, label] of [["net.operator", "Operator"], ["net.type", "Network"],
       ["signal.band", "Band"], ["signal.cell_id", "Cell"], ["net.gateway", "Gateway"]]) {
-    if (src.texts[key]) facts.push(`<span>${label} <b>${src.texts[key]}</b></span>`);
+    if (src.texts[key]) facts.push(`<span class="k">${label}</span><span class="v">${src.texts[key]}</span>`);
   }
-  facts.push(`<span>Recorded <b>${(src.coverage * 100).toFixed(0)}%</b> of the last hour</span>`);
+  facts.push(`<span class="k">Recorded</span><span class="v">${(src.coverage * 100).toFixed(0)}% of the last hour</span>`);
   document.getElementById("facts").innerHTML = facts.join("");
+
+  await Promise.all([drawCharts(), drawQuality(), drawInsights(), drawEvents(), drawDevices()]);
+  firstPaintDone = true;
 }
 
 async function drawCharts() {
-  const q = (metric, buckets = 90) =>
-    json(`/api/history?source=${encodeURIComponent(state.source)}&metric=${metric}&minutes=${state.minutes}&buckets=${buckets}`);
-  const [latency, down, up, rsrp, sinr, events] = await Promise.all([
+  const q = metric =>
+    json(`/api/history?source=${encodeURIComponent(state.source)}&metric=${metric}&minutes=${state.minutes}&buckets=120`);
+  const [latency, downH, upH, rsrp, sinr, events] = await Promise.all([
     q("latency.internet_ms"), q("traffic.down_bytes_s"), q("traffic.up_bytes_s"),
-    q("signal.rsrp_dbm"), q("signal.rsrq_db") && q("signal.sinr_db"),
-    json(`/api/events?minutes=${state.minutes}`),
+    q("signal.rsrp_dbm"), q("signal.sinr_db"), json(`/api/events?minutes=${state.minutes}`),
   ]);
-  const blue = css("--series-1"), orange = css("--series-2");
+  const down = css("--down"), up = css("--up"), mono = css("--mono");
   const times = latency.times;
-  const toBand = e => {
-    const a = times.findIndex(t => t >= e.started_at);
-    const b = e.ended_at ? times.findIndex(t => t >= e.ended_at) : times.length - 1;
-    return a >= 0 ? [a, b < 0 ? times.length - 1 : b] : null;
-  };
-  const bands = events.events.filter(e => e.kind === "outage" && e.source === state.source)
-    .map(toBand).filter(Boolean);
+  const bands = events.events
+    .filter(e => e.kind === "outage" && e.source === state.source)
+    .map(e => {
+      const a = times.findIndex(t => t >= e.started_at);
+      const b = e.ended_at ? times.findIndex(t => t >= e.ended_at) : times.length - 1;
+      return a >= 0 ? [a, b < 0 ? times.length - 1 : b] : null;
+    }).filter(Boolean);
 
-  lineChart(document.getElementById("latency"),
-    [{ name: "internet", color: blue, points: latency.points }],
-    { times, bands, format: v => Math.round(v), tipFormat: fmt.ms });
+  chart(document.getElementById("throughput"),
+    [{ name: "download", color: down, fill: css("--down-fill"), points: downH.points.map(v => v == null ? null : v * 8 / 1e6) },
+     { name: "upload", color: up, fill: css("--up-fill"), points: upH.points.map(v => v == null ? null : v * 8 / 1e6) }],
+    { times: downH.times, height: 210, format: fmt.axis, tip: v => v.toFixed(1) + " Mbps" });
+
+  chart(document.getElementById("latency"),
+    [{ name: "latency", color: mono, fill: css("--mono-fill"), points: latency.points }],
+    { times, bands, height: 190, format: v => Math.round(v), tip: fmt.ms });
   document.getElementById("latency-note").textContent =
-    `Buckets show the worst latency in each interval — spikes survive. ` +
-    `Recorded ${(latency.coverage * 100).toFixed(0)}% of this period; shaded gaps were not sampled.`;
-
-  lineChart(document.getElementById("throughput"),
-    [{ name: "download", color: blue, points: down.points },
-     { name: "upload", color: orange, points: up.points }],
-    { times: down.times, format: v => fmt.mbps(v), tipFormat: v => fmt.mbps(v) + " Mbps" });
+    `Recorded ${(latency.coverage * 100).toFixed(0)}% of this window — shaded stretches were not sampled, and nothing is invented across them.`;
 
   const hasSignal = rsrp.points.some(v => v != null);
-  document.getElementById("signal-panels").hidden = !hasSignal;
+  document.getElementById("signal-panel").hidden = !hasSignal;
   if (hasSignal) {
-    lineChart(document.getElementById("rsrp"),
-      [{ name: "RSRP", color: blue, points: rsrp.points }],
-      { times: rsrp.times, floor: -120, format: v => Math.round(v), tipFormat: v => v.toFixed(1) + " dBm" });
-    lineChart(document.getElementById("sinr"),
-      [{ name: "SINR", color: blue, points: sinr.points }],
-      { times: sinr.times, floor: -5, format: v => Math.round(v), tipFormat: v => v.toFixed(1) + " dB" });
+    chart(document.getElementById("rsrp"),
+      [{ name: "RSRP", color: mono, fill: css("--mono-fill"), points: rsrp.points }],
+      { times: rsrp.times, height: 150, floor: -120, format: v => Math.round(v), tip: v => v.toFixed(1) + " dBm" });
+    chart(document.getElementById("sinr"),
+      [{ name: "SINR", color: mono, fill: css("--mono-fill"), points: sinr.points }],
+      { times: sinr.times, height: 150, floor: -5, format: v => Math.round(v), tip: v => v.toFixed(1) + " dB" });
   }
+}
+
+async function drawQuality() {
+  const data = await json(`/api/quality?source=${encodeURIComponent(state.source)}`);
+  if (!data.quality) return;
+  const quality = data.quality;
+  document.getElementById("quality").innerHTML = `
+    <div class="grade-row">
+      <div class="grade ${quality.grade}">${quality.grade}</div>
+      <div class="grade-detail">
+        score <b>${quality.score}</b>/100 · median <b>${quality.p50_ms}ms</b> · p95 <b>${quality.p95_ms}ms</b><br>
+        jitter <b>${quality.jitter_ms}ms</b> · loss <b>${quality.loss_pct}%</b>
+      </div>
+    </div>`;
 }
 
 async function drawInsights() {
   const data = await json(`/api/insights?source=${encodeURIComponent(state.source)}`);
-  const icons = { critical: "🔴", warning: "🟠", info: "🟢" };
+  const color = { critical: "var(--critical)", warning: "var(--serious)", info: "var(--good)" };
   document.getElementById("insights").innerHTML = data.insights.length
-    ? data.insights.map(i => `<div class="insight"><div class="icon">${icons[i.severity]}</div>
+    ? data.insights.map(i => `<div class="insight"><div class="bar" style="background:${color[i.severity]}"></div>
         <div><div class="title">${i.title}</div><div class="detail">${i.detail}</div></div></div>`).join("")
     : `<div class="empty">Nothing to flag — the connection looks healthy.</div>`;
 }
 
 async function drawEvents() {
   const data = await json("/api/events?minutes=10080");
+  document.getElementById("evcount").textContent = data.events.length ? `${data.events.length} in 7d` : "";
   document.getElementById("events").innerHTML = data.events.length
-    ? data.events.slice(0, 12).map(e => {
-        const badge = e.ended_at
-          ? `<span class="badge ${e.severity === "critical" ? "critical" : "warning"}">${e.kind}</span>`
-          : `<span class="badge open">ongoing</span>`;
+    ? data.events.slice(0, 10).map(e => {
         const mins = e.ended_at ? Math.max(1, Math.round((new Date(e.ended_at) - new Date(e.started_at)) / 60000)) : null;
-        return `<div class="event"><span class="when">${fmt.when(e.started_at)}</span>${badge}
-          <span>${e.source}${mins ? ` · ${mins} min` : ""} · ${e.detail}</span></div>`;
+        const tail = e.ended_at ? `<span class="dur">${mins}m</span>` : `<span class="live">ongoing</span>`;
+        return `<div class="event"><span class="when">${fmt.when(e.started_at)}</span>
+          <span class="sev ${e.severity}"></span><span>${e.kind} · ${e.source}</span>${tail}</div>`;
       }).join("")
     : `<div class="empty">No outages recorded.</div>`;
 }
@@ -369,51 +544,97 @@ async function drawDevices() {
   const data = await json(`/api/devices?source=${encodeURIComponent(state.source)}&hours=24`);
   const panel = document.getElementById("devices-panel");
   panel.hidden = data.devices.length === 0;
+  document.getElementById("devcount").textContent = `${data.devices.length} · 24h`;
   document.getElementById("devices").innerHTML = data.devices.map(d =>
-    `<div class="device"><span class="name">${d.name || "unnamed device"}</span>
-     <span class="meta">${d.ip}</span><span class="meta">${d.mac}</span>
-     <span style="flex:1"></span><span class="meta">seen ${fmt.when(d.last_seen)}</span></div>`
-  ).join("");
+    `<div class="device"><span class="name">${d.name || "unnamed"}</span>
+     <span class="meta">${d.ip}</span><span style="flex:1"></span>
+     <span class="meta">${fmt.when(d.last_seen)}</span></div>`).join("");
 }
 
-/* ------------------------------------ wiring ------------------------------------ */
+/* ============================== wiring ============================== */
 
-document.getElementById("ranges").innerHTML =
-  RANGES.map(([label, minutes]) =>
+for (const seg of document.querySelectorAll(".seg")) {
+  seg.innerHTML = RANGES.map(([label, minutes]) =>
     `<button data-m="${minutes}" class="${minutes === state.minutes ? "on" : ""}">${label}</button>`).join("");
-document.getElementById("ranges").addEventListener("click", event => {
-  const button = event.target.closest("button"); if (!button) return;
+}
+document.addEventListener("click", event => {
+  const button = event.target.closest(".seg button"); if (!button) return;
   state.minutes = Number(button.dataset.m);
-  for (const b of button.parentElement.children) b.classList.toggle("on", b === button);
+  for (const other of document.querySelectorAll(".seg button"))
+    other.classList.toggle("on", Number(other.dataset.m) === state.minutes);
   drawCharts();
 });
+
 document.getElementById("source").addEventListener("change", event => {
   state.source = event.target.value; refresh();
 });
 
+document.getElementById("theme").addEventListener("click", () => {
+  const root = document.documentElement;
+  const next = root.getAttribute("data-theme") === "light" ? "dark" : "light";
+  root.setAttribute("data-theme", next);
+  try { localStorage.setItem("netpulse-theme", next); } catch {}
+  refresh();
+});
+try {
+  const saved = localStorage.getItem("netpulse-theme");
+  if (saved) document.documentElement.setAttribute("data-theme", saved);
+} catch {}
+
 document.getElementById("speedtest").addEventListener("click", async event => {
   const button = event.target;
-  // It moves ~30 MB of real data, and many watched connections are metered.
-  if (!confirm("A speed test moves about 30 MB of real data. Run it?")) return;
+  if (!confirm("A speed test moves about 30 MB of real data — many plans are metered. Run it?")) return;
   button.disabled = true; button.textContent = "Testing…";
   try {
-    const response = await fetch(`/api/speedtest?source=${encodeURIComponent(state.source)}`, { method: "POST" });
-    const result = await response.json();
-    button.textContent = result.error
-      ? "Speed test failed"
-      : `↓ ${result.down_mbps} / ↑ ${result.up_mbps} Mbps`;
+    const result = await json(`/api/speedtest?source=${encodeURIComponent(state.source)}`, { method: "POST" });
+    button.textContent = result.error ? "Failed" : `↓ ${result.down_mbps} ↑ ${result.up_mbps} Mbps`;
     refresh();
-  } catch { button.textContent = "Speed test failed"; }
-  setTimeout(() => { button.textContent = "Speed test"; button.disabled = false; }, 8000);
+  } catch { button.textContent = "Failed"; }
+  setTimeout(() => { button.textContent = "Speed test"; button.disabled = false; }, 9000);
+});
+
+/* -------- settings drawer: sources + router scan -------- */
+const drawer = document.getElementById("drawer-root");
+document.getElementById("settings").addEventListener("click", async () => {
+  drawer.hidden = false;
+  const overview = await json("/api/overview");
+  document.getElementById("srclist").innerHTML = overview.sources.map(s => `
+    <div class="srcrow"><span class="pulse-dot ${s.up ? "" : "down"}" style="width:8px;height:8px"></span>
+      <b>${s.name}</b><span class="k">${s.kind}</span>
+      <span style="flex:1"></span>
+      <span class="k">${s.texts["net.operator"] || s.texts["net.gateway"] || ""}</span></div>`).join("");
+});
+document.getElementById("drawer-back").addEventListener("click", () => { drawer.hidden = true; });
+
+document.getElementById("scan").addEventListener("click", async event => {
+  const button = event.target, status = document.getElementById("scanstate");
+  button.disabled = true; status.textContent = " scanning the gateway and well-known addresses…";
+  try {
+    const data = await json("/api/discover", { method: "POST" });
+    status.textContent = data.found.length ? "" : " no router answered — the probe still monitors this connection.";
+    document.getElementById("scanresults").innerHTML = data.found.map(f => `
+      <div class="found"><div><b>${f.label}</b><br><span style="color:var(--text-3);font-size:11px">${f.url} · ${f.kind}</span></div>
+        <span style="flex:1"></span>
+        ${f.already_watched ? `<span style="color:var(--good);font-size:12px">watching</span>`
+          : `<button class="iconbtn" data-kind="${f.kind}" data-url="${f.url}">Watch it</button>`}
+      </div>`).join("");
+  } catch { status.textContent = " scan failed"; }
+  button.disabled = false;
+});
+document.getElementById("scanresults").addEventListener("click", async event => {
+  const button = event.target.closest("button[data-kind]"); if (!button) return;
+  button.disabled = true; button.textContent = "Adding…";
+  await json(`/api/sources?kind=${button.dataset.kind}&url=${encodeURIComponent(button.dataset.url)}&name=${button.dataset.kind}`, { method: "POST" });
+  button.textContent = "Watching ✓";
+  setTimeout(refresh, 1500);
 });
 
 refresh();
 setInterval(refresh, 15000);
-// SSE nudges the tiles between refreshes; the page still works if it never connects.
 try {
   const stream = new EventSource("/api/stream");
   let last = 0;
-  stream.onmessage = () => { if (Date.now() - last > 4000) { last = Date.now(); refresh(); } };
+  stream.onmessage = () => { if (firstPaintDone && Date.now() - last > 4000) { last = Date.now(); refresh(); } };
 } catch {}
 </script>
 </body>

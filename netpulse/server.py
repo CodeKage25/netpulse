@@ -11,8 +11,12 @@ from importlib import resources
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
+from netpulse.adapters import build
+from netpulse.config import SourceConfig
+from netpulse.discover import discover
 from netpulse.insights import diagnose
 from netpulse.monitor import Collector
+from netpulse.quality import assess
 from netpulse.speedtest import run_speedtest
 from netpulse.storage import Store, utcnow
 
@@ -34,6 +38,8 @@ class Api:
         self.collector = collector
         self.interval_s = interval_s
         self._clock = clock
+        #: Called with each added SourceConfig so it survives a restart; None in tests.
+        self.persist_sources: Any = None
         self._streams: list[queue.Queue[str]] = []
         self._streams_lock = threading.Lock()
         collector.subscribe(self._publish)
@@ -81,18 +87,64 @@ class Api:
         return {"sources": sources, "now": now.isoformat()}
 
     def _uptime(self, source: str, now: datetime) -> float | None:
-        """Fraction of *recorded* polls that were up. Unrecorded time is excluded, not
-        assumed up — coverage says how much of the day this figure actually covers."""
-        series = self.store.history(source, "up", now - timedelta(hours=24), now, 288, None)
-        seen = [value for _, value in series if value is not None]
-        if not seen:
+        """Fraction of *recorded* polls that were up — per poll, never per bucket.
+
+        Bucketing first would let one bad minute zero a day (up buckets by MIN so charts
+        show any failure), which is exactly the distortion a summary figure must not
+        inherit. Unrecorded time is excluded, not assumed up; coverage says how much of
+        the day this figure actually covers."""
+        polls = self.store.values(source, "up", now - timedelta(hours=24), now)
+        if not polls:
             return None
-        return sum(1 for value in seen if value >= 1.0) / len(seen)
+        return sum(1 for value in polls if value >= 1.0) / len(polls)
 
     def devices(self, source: str, hours: float) -> dict[str, Any]:
         return {
             "devices": self.store.devices(source, self._clock() - timedelta(hours=hours)),
         }
+
+    def quality(self, source: str) -> dict[str, Any]:
+        graded = assess(self.store, source, self._clock())
+        if graded is None:
+            return {"quality": None}
+        return {
+            "quality": {
+                "score": graded.score,
+                "grade": graded.grade,
+                "p50_ms": graded.p50_ms,
+                "p95_ms": graded.p95_ms,
+                "p99_ms": graded.p99_ms,
+                "jitter_ms": graded.jitter_ms,
+                "loss_pct": graded.loss_pct,
+            }
+        }
+
+    def discover_routers(self) -> dict[str, Any]:
+        found = discover()
+        # A router already being watched should say so, not offer itself again.
+        existing = {
+            getattr(self.collector._states[name].adapter, "base", None)
+            for name in self.collector.sources
+        }
+        return {
+            "found": [
+                {
+                    "kind": item.kind,
+                    "url": item.url,
+                    "label": item.label,
+                    "already_watched": item.url in existing,
+                }
+                for item in found
+            ]
+        }
+
+    def add_source(self, kind: str, url: str, name: str) -> dict[str, Any]:
+        source = SourceConfig(name=name or kind, kind=kind, options={"url": url} if url else {})
+        adapter = build(source.kind, source.name, source.options)
+        self.collector.add_adapter(adapter)
+        if self.persist_sources is not None:
+            self.persist_sources(source)
+        return {"added": source.name}
 
     def speedtest(self, source: str) -> dict[str, Any]:
         result = run_speedtest(self.store, source)
@@ -194,6 +246,8 @@ def make_handler(api: Api) -> type[BaseHTTPRequestHandler]:
                     self._json(api.events(int(params.get("minutes", 1440))))
                 elif url.path == "/api/insights":
                     self._json(api.insights(params.get("source", "")))
+                elif url.path == "/api/quality":
+                    self._json(api.quality(params.get("source", "")))
                 elif url.path == "/api/devices":
                     self._json(
                         api.devices(params.get("source", ""), float(params.get("hours", 24)))
@@ -211,7 +265,15 @@ def make_handler(api: Api) -> type[BaseHTTPRequestHandler]:
             url = urlparse(self.path)
             params = {key: values[0] for key, values in parse_qs(url.query).items()}
             try:
-                if url.path == "/api/speedtest":
+                if url.path == "/api/discover":
+                    self._json(api.discover_routers())
+                elif url.path == "/api/sources":
+                    self._json(
+                        api.add_source(
+                            params.get("kind", ""), params.get("url", ""), params.get("name", "")
+                        )
+                    )
+                elif url.path == "/api/speedtest":
                     # Deliberately synchronous and deliberately POST-only: it moves real
                     # data on what may be a metered plan, so only an explicit click or
                     # curl -X POST triggers it, never a page load.

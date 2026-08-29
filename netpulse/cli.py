@@ -39,9 +39,31 @@ def run(args: argparse.Namespace) -> int:
     collector = Collector(store, _adapters(config), interval_s=config.interval_s, notifier=notifier)
     api = Api(store, collector, config.interval_s)
 
+    def persist(source: SourceConfig) -> None:
+        from netpulse.config import save_sources
+
+        existing = [SourceConfig(s.name, s.kind, dict(s.options)) for s in config.sources]
+        save_sources([source, *existing])
+
+    api.persist_sources = persist
+
     stop = threading.Event()
     thread = threading.Thread(target=collector.run, args=(stop,), daemon=True)
     thread.start()
+
+    configless = not getattr(args, "demo", False) and all(s.kind == "probe" for s in config.sources)
+    if configless:
+        # First run: go find the router while the probe is already recording.
+        def autodiscover() -> None:
+            from netpulse.adapters import build as build_adapter
+            from netpulse.discover import discover
+
+            for item in discover():
+                print(f"found {item.label} at {item.url} — now watching it", flush=True)
+                collector.add_adapter(build_adapter(item.kind, item.kind, {"url": item.url}))
+                persist(SourceConfig(name=item.kind, kind=item.kind, options={"url": item.url}))
+
+        threading.Thread(target=autodiscover, daemon=True).start()
 
     port = args.port or config.port
     httpd = serve(api, port)
@@ -123,6 +145,30 @@ def diagnose_cmd(args: argparse.Namespace) -> int:
     return exit_code
 
 
+def discover_cmd(args: argparse.Namespace) -> int:
+    from netpulse.config import save_sources
+    from netpulse.discover import discover
+
+    print("scanning the gateway and well-known router addresses…", flush=True)
+    found = discover()
+    if not found:
+        print("no Huawei or ZTE router answered; the probe still monitors this connection")
+        return 1
+    sources = [SourceConfig(name="wan", kind="probe")]
+    for item in found:
+        print(f"  found {item.label} ({item.kind}) at {item.url}")
+        sources.insert(0, SourceConfig(name=item.kind, kind=item.kind, options={"url": item.url}))
+    location = save_sources(sources)
+    print(f"written to {location} — `netpulse run` now watches it")
+    return 0
+
+
+def probe_router_cmd(args: argparse.Namespace) -> int:
+    from netpulse.probe_router import probe_router
+
+    return probe_router(args.url)
+
+
 def speedtest_cmd(args: argparse.Namespace) -> int:
     from netpulse.speedtest import COST_NOTE, run_speedtest
 
@@ -167,6 +213,15 @@ def main(argv: list[str] | None = None) -> int:
 
     diag = commands.add_parser("diagnose", help="rule-based diagnosis with evidence")
     diag.set_defaults(handler=diagnose_cmd)
+
+    disco = commands.add_parser("discover", help="find your router and write the config")
+    disco.set_defaults(handler=discover_cmd)
+
+    probing = commands.add_parser(
+        "probe-router", help="show what a router answers, for adapter debugging"
+    )
+    probing.add_argument("url", help="e.g. http://192.168.0.1")
+    probing.set_defaults(handler=probe_router_cmd)
 
     speed = commands.add_parser("speedtest", help="on-demand speed test (moves ~30 MB)")
     speed.add_argument("--yes", action="store_true", help="skip the data-cost confirmation")

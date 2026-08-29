@@ -59,12 +59,17 @@ class Collector:
     def sources(self) -> list[str]:
         return list(self._states)
 
+    def add_adapter(self, adapter: Adapter) -> None:
+        """Hot-add a source — discovery finding a router must not need a restart."""
+        if adapter.name not in self._states:
+            self._states[adapter.name] = _SourceState(adapter)
+
     def subscribe(self, listener: Callable[[str, dict[str, float]], None]) -> None:
         self._listeners.append(listener)
 
     def poll_once(self) -> None:
         self._maybe_compact()
-        for name, state in self._states.items():
+        for name, state in list(self._states.items()):
             if state.skip > 0:
                 state.skip -= 1
                 continue

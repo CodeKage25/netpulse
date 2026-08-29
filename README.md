@@ -10,10 +10,16 @@ the network you're paying for.
 
 ```bash
 pip install netpulse-monitor
-netpulse run          # zero config: watches the connection you're on
+netpulse run          # zero config — finds your router by itself
 ```
 
-Open http://127.0.0.1:8787. No account, no cloud, no telemetry. Everything stays on your
+Open http://127.0.0.1:8787. The probe starts measuring your connection immediately, and
+discovery scans the gateway and the well-known CPE addresses in the background — a Huawei
+or ZTE box (which is what MTN, Airtel and Glo ship) is found, watched and remembered
+without you touching a config file. There is also a **Scan for routers** button in the
+dashboard's settings drawer, and `netpulse discover` for the terminal.
+
+No account, no cloud, no telemetry. Everything stays on your
 machine, and the dashboard has zero external assets — it keeps rendering **during** the
 outage, which is exactly when you want it.
 
@@ -33,12 +39,15 @@ outage, which is exactly when you want it.
 The probe works alongside a router adapter, so "the router says the signal is fine" and
 "the internet actually answers" are measured separately — which is the whole diagnosis.
 
+Discovery writes `~/.netpulse/netpulse.toml` for you; edit it only if your router hides
+somewhere unusual:
+
 ```toml
-# ~/.netpulse/netpulse.toml
 [[source]]
 name = "mtn"
 kind = "huawei"
 url = "http://192.168.8.1"
+# username/password unlock SMS reading (where balance texts arrive)
 
 [[source]]
 name = "wan"
@@ -80,7 +89,8 @@ answer every time, evidence attached.
 ## CLI
 
 ```
-netpulse run [--demo] [--port 8787]   record + dashboard
+netpulse run [--demo] [--port 8787]   record + dashboard (+ background discovery)
+netpulse discover                     find your router, write the config
 netpulse status                       latest reading per source, with 24h coverage
 netpulse events [--hours 48]          outages and degradations
 netpulse diagnose                     rule-based findings (exit 1 on critical)
@@ -98,6 +108,14 @@ netpulse diagnose                     rule-based findings (exit 1 on critical)
 - Tests never touch the network: adapters take injectable probes/fetchers, and router
   behaviour is tested against recorded XML/JSON fixtures — including half-formed XML from
   a router mid-reboot, which must register as a failed poll, not a crash.
+
+## The dashboard
+
+A dark instrument panel in Dishylink's manner — huge live figures with sparklines, area
+charts with per-chart time ranges, an events feed, and a **connection quality grade**
+(A–F, scored on p95 latency, jitter, tail and loss, with jitter weighted above the tail
+because a predictable 40ms beats a fast-but-spiky link). Light theme included; every
+asset inline, so it renders mid-outage.
 
 ## Also in the box
 

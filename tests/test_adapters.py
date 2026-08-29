@@ -198,7 +198,7 @@ def test_zte_reads_one_request_for_the_whole_sweep() -> None:
 
 
 def test_zte_empty_reply_is_a_failed_poll() -> None:
-    with pytest.raises(AdapterError, match="Referer guard, or rebooting"):
+    with pytest.raises(AdapterError, match="did not answer a known ZTE API"):
         ZteAdapter("airtel", fetch=lambda url, headers: b"").read()
 
 
