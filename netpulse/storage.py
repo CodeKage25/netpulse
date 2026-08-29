@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import sqlite3
 import threading
-from collections.abc import Callable, Iterator
+from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+from netpulse.clock import Clock, utcnow
 from netpulse.model import (
     Agg,
     Coverage,
@@ -84,10 +85,6 @@ def _minute(value: str) -> str:
     return value[:17] + "00.000000+00:00"
 
 
-def utcnow() -> datetime:
-    return datetime.now(UTC)
-
-
 @dataclass
 class _Stat:
     """Sufficient statistics for one bucket. Raw values and rollup rows merge alike."""
@@ -123,7 +120,7 @@ class Store:
     raw samples and compacted minutes, so compaction never inflates or deflates it.
     """
 
-    def __init__(self, path: str | Path = ":memory:", clock: Callable[[], datetime] = utcnow):
+    def __init__(self, path: str | Path = ":memory:", clock: Clock = utcnow):
         self.path = str(path)
         if self.path != ":memory:":
             Path(self.path).parent.mkdir(parents=True, exist_ok=True)

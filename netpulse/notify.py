@@ -13,7 +13,7 @@ import subprocess
 from collections.abc import Callable
 from datetime import datetime
 
-from netpulse.storage import utcnow
+from netpulse.clock import Clock, utcnow
 
 #: Long enough that a flapping link cannot become a storm, short enough that a genuine
 #: recurrence still reaches someone.
@@ -33,7 +33,7 @@ class Notifier:
     def __init__(
         self,
         deliver: Callable[[str, str], None] = _system_notify,
-        clock: Callable[[], datetime] = utcnow,
+        clock: Clock = utcnow,
     ) -> None:
         self._deliver = deliver
         self._clock = clock

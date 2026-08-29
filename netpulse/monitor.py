@@ -9,9 +9,10 @@ from datetime import datetime
 from netpulse.adapters import Adapter
 from netpulse.allowance import assess as assess_allowance
 from netpulse.allowance import crossed, format_bytes
+from netpulse.clock import Clock, utcnow
 from netpulse.model import EventKind, Severity
 from netpulse.notify import Notifier
-from netpulse.storage import Store, utcnow
+from netpulse.storage import Store
 
 #: Three misses before an outage is declared: one failed poll is a blip, three is real.
 OUTAGE_AFTER = 3
@@ -46,7 +47,7 @@ class Collector:
         store: Store,
         adapters: list[Adapter],
         interval_s: float = 5.0,
-        clock: Callable[[], datetime] = utcnow,
+        clock: Clock = utcnow,
         notifier: Notifier | None = None,
         plan: object | None = None,
     ) -> None:

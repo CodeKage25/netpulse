@@ -8,12 +8,13 @@ from pathlib import Path
 
 from netpulse import __version__
 from netpulse.adapters import Adapter, build
+from netpulse.clock import utcnow
 from netpulse.config import Config, SourceConfig, load
 from netpulse.insights import diagnose
 from netpulse.monitor import Collector
 from netpulse.notify import Notifier
 from netpulse.server import Api, serve
-from netpulse.storage import Store, utcnow
+from netpulse.storage import Store
 
 
 def _config(args: argparse.Namespace) -> Config:
