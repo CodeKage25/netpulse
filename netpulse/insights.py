@@ -10,19 +10,22 @@ from __future__ import annotations
 from collections.abc import Callable
 from datetime import datetime, timedelta
 
-from netpulse.model import Insight, Severity
+from netpulse.model import Agg, Insight, Severity
 from netpulse.storage import Store
 
 
-def _values(series: list[tuple[datetime, float | None]]) -> list[float]:
-    return [value for _, value in series if value is not None]
+def _typical(
+    store: Store, source: str, metric: str, since: datetime, now: datetime, buckets: int
+) -> float | None:
+    """Median of MEAN-bucketed values.
 
-
-def _median(values: list[float]) -> float | None:
-    if not values:
-        return None
-    ordered = sorted(values)
-    return ordered[len(ordered) // 2]
+    Deliberately not the chart's MAX bucketing: a chart must show the worst moment, but a
+    diagnosis of "what is this connection normally like" read from max-buckets would see a
+    spike in every sparse bucket and blame the provider for a link that is mostly fine.
+    """
+    series = store.history(source, metric, since, now, buckets, agg=Agg.MEAN)
+    values = sorted(value for _, value in series if value is not None)
+    return values[len(values) // 2] if values else None
 
 
 Rule = Callable[[Store, str, datetime], Insight | None]
@@ -31,8 +34,8 @@ Rule = Callable[[Store, str, datetime], Insight | None]
 def upstream_or_local(store: Store, source: str, now: datetime) -> Insight | None:
     """The question every household argues about: whose fault is the slow internet."""
     window = now - timedelta(minutes=15)
-    gateway = _median(_values(store.history(source, "latency.gateway_ms", window, now, 15)))
-    internet = _median(_values(store.history(source, "latency.internet_ms", window, now, 15)))
+    gateway = _typical(store, source, "latency.gateway_ms", window, now, 15)
+    internet = _typical(store, source, "latency.internet_ms", window, now, 15)
     if gateway is None or internet is None:
         return None
     if internet > 250 and gateway < 20:
@@ -65,8 +68,8 @@ def upstream_or_local(store: Store, source: str, now: datetime) -> Insight | Non
 
 def weak_signal(store: Store, source: str, now: datetime) -> Insight | None:
     window = now - timedelta(minutes=30)
-    rsrp = _median(_values(store.history(source, "signal.rsrp_dbm", window, now, 10)))
-    sinr = _median(_values(store.history(source, "signal.sinr_db", window, now, 10)))
+    rsrp = _typical(store, source, "signal.rsrp_dbm", window, now, 10)
+    sinr = _typical(store, source, "signal.sinr_db", window, now, 10)
     if rsrp is None and sinr is None:
         return None
     if sinr is not None and sinr < 0:
@@ -109,8 +112,8 @@ def weak_signal(store: Store, source: str, now: datetime) -> Insight | None:
 
 def slow_dns(store: Store, source: str, now: datetime) -> Insight | None:
     window = now - timedelta(minutes=15)
-    dns = _median(_values(store.history(source, "dns.lookup_ms", window, now, 15)))
-    connect = _median(_values(store.history(source, "latency.internet_best_ms", window, now, 15)))
+    dns = _typical(store, source, "dns.lookup_ms", window, now, 15)
+    connect = _typical(store, source, "latency.internet_best_ms", window, now, 15)
     if dns is None or connect is None or connect <= 0:
         return None
     if dns > 150 and dns > 4 * connect:
@@ -151,9 +154,8 @@ def flapping(store: Store, source: str, now: datetime) -> Insight | None:
 
 def congestion_hours(store: Store, source: str, now: datetime) -> Insight | None:
     """Last hour vs the day's baseline, for the nightly-slowdown pattern."""
-    hour = _values(store.history(source, "latency.internet_ms", now - timedelta(hours=1), now, 12))
-    day = _values(store.history(source, "latency.internet_ms", now - timedelta(hours=24), now, 48))
-    recent, baseline = _median(hour), _median(day)
+    recent = _typical(store, source, "latency.internet_ms", now - timedelta(hours=1), now, 12)
+    baseline = _typical(store, source, "latency.internet_ms", now - timedelta(hours=24), now, 48)
     if recent is None or baseline is None or baseline <= 0:
         return None
     if recent > 2 * baseline and recent > 150:

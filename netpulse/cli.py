@@ -11,6 +11,7 @@ from netpulse.adapters import Adapter, build
 from netpulse.config import Config, SourceConfig, load
 from netpulse.insights import diagnose
 from netpulse.monitor import Collector
+from netpulse.notify import Notifier
 from netpulse.server import Api, serve
 from netpulse.storage import Store, utcnow
 
@@ -34,7 +35,8 @@ def _adapters(config: Config) -> list[Adapter]:
 def run(args: argparse.Namespace) -> int:
     config = _config(args)
     store = Store(config.db_path if str(config.db_path) != ":memory:" else ":memory:")
-    collector = Collector(store, _adapters(config), interval_s=config.interval_s)
+    notifier = Notifier() if config.notifications else None
+    collector = Collector(store, _adapters(config), interval_s=config.interval_s, notifier=notifier)
     api = Api(store, collector, config.interval_s)
 
     stop = threading.Event()
@@ -121,22 +123,25 @@ def diagnose_cmd(args: argparse.Namespace) -> int:
     return exit_code
 
 
-def ask(args: argparse.Namespace) -> int:
-    from netpulse.ask import ask_claude
+def speedtest_cmd(args: argparse.Namespace) -> int:
+    from netpulse.speedtest import COST_NOTE, run_speedtest
 
+    if not args.yes:
+        answer = input(f"A speed test {COST_NOTE}. Continue? [y/N] ")
+        if answer.strip().lower() not in ("y", "yes"):
+            print("cancelled")
+            return 1
     config = _config(args)
     store = Store(config.db_path)
-    try:
-        return ask_claude(store, config, args.question)
-    finally:
-        store.close()
-
-
-def mcp(args: argparse.Namespace) -> int:
-    from netpulse.mcp_server import serve_mcp
-
-    config = _config(args)
-    return serve_mcp(Store(config.db_path), config)
+    source = store.sources()[0] if store.sources() else "wan"
+    print("running…", flush=True)
+    result = run_speedtest(store, source)
+    print(
+        f"download {result.down_mbps:.1f} Mbps   upload {result.up_mbps:.1f} Mbps"
+        f"   ({result.seconds:.0f}s)"
+    )
+    store.close()
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -163,12 +168,9 @@ def main(argv: list[str] | None = None) -> int:
     diag = commands.add_parser("diagnose", help="rule-based diagnosis with evidence")
     diag.set_defaults(handler=diagnose_cmd)
 
-    asking = commands.add_parser("ask", help="ask Claude about your connection (needs [ai] extra)")
-    asking.add_argument("question", nargs="?", default="How has my connection been lately?")
-    asking.set_defaults(handler=ask)
-
-    serving = commands.add_parser("mcp", help="serve history to MCP clients (needs [mcp] extra)")
-    serving.set_defaults(handler=mcp)
+    speed = commands.add_parser("speedtest", help="on-demand speed test (moves ~30 MB)")
+    speed.add_argument("--yes", action="store_true", help="skip the data-cost confirmation")
+    speed.set_defaults(handler=speedtest_cmd)
 
     args = parser.parse_args(argv)
     try:

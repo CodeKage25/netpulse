@@ -28,15 +28,40 @@ live dashboard, `netpulse run` on a real MTN (Huawei) LAN shows signal + traffic
 
 ## Tasks
 
-- [ ] Scaffold, pyproject, CLAUDE.md, plan
-- [ ] `model.py` — Reading, Event, Insight
-- [ ] `storage.py` — SQLite, bucketed history, coverage, events
-- [ ] `adapters/` — base contract, fake (demo+tests), probe, huawei
-- [ ] `monitor.py` — collector loop, outage/degraded state machine, backoff
-- [ ] `insights.py` — rule-based diagnosis with evidence
-- [ ] `web/dashboard.html` — tiles, charts, events, insights; no external assets
-- [ ] `server.py` — API + SSE + static, stdlib http.server
-- [ ] `cli.py` — run/status/events/diagnose/ask/mcp, --demo
-- [ ] `ask.py` + `mcp.py` — optional extras
-- [ ] Tests for all of it, no network
-- [ ] README with honest limits
+- [x] Scaffold, pyproject, CLAUDE.md, plan
+- [x] `model.py` — Reading, Event, Insight
+- [x] `storage.py` — SQLite, bucketed history, coverage, events
+- [x] `adapters/` — base contract, fake (demo+tests), probe, huawei
+- [x] `monitor.py` — collector loop, outage/degraded state machine, backoff
+- [x] `insights.py` — rule-based diagnosis with evidence
+- [x] `web/dashboard.html` — tiles, charts, events, insights; no external assets
+- [x] `server.py` — API + SSE + static, stdlib http.server
+- [x] `cli.py` — run/status/events/diagnose/ask/mcp, --demo
+- [x] ~~ask/mcp~~ built, then removed at user direction (recoverable at f72eaf1)
+- [x] Tests for all of it, no network
+- [x] README with honest limits
+
+---
+
+# v0.2 — depth
+
+- [x] Retention ladder: per-minute sufficient statistics, seamless history, exact spikes
+- [x] Devices on the network (Huawei host-list, own gentler cadence)
+- [x] On-demand speed test, loud about its ~30 MB cost, never scheduled
+- [x] OS notifications: down and back-with-duration, direction-keyed throttle
+- [x] Dashboard: devices panel, uptime tile, speed test button, undistorted axis labels
+
+## Review
+
+65 tests, ruff and strict mypy clean, demo verified end-to-end with a rendered screenshot.
+
+Bugs found while building, in the honest column:
+1. A big sed-style patch silently missed its target after ruff reformatted the file, and I
+   had not asserted on the replace — the exact lesson already in airlock's lessons file.
+   Every patch now asserts.
+2. Rendered-screenshot review caught a real diagnosis bug: insights computed "typical
+   latency" from MAX-bucketed series (right for charts, wrong for norms), so a healthy
+   link with rare spikes was blamed on the provider. Diagnosis now aggregates by mean,
+   with a regression test of exactly that link shape.
+3. Test fixtures raised KeyError where a real router raises OSError, hiding how the new
+   host-list call would actually fail. Fixtures now fail like hardware.

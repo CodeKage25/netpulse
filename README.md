@@ -74,11 +74,8 @@ about, from evidence, with the numbers shown:
 - **Slow DNS** (with the fix), **flapping** (3+ outages/day), **congestion hours** (this
   hour vs your own 24h baseline).
 
-The diagnosis is deliberately deterministic — no model, no API key, no cost, same answer
-every time, evidence attached. For those who want it, two small optional extras exist:
-`netpulse ask "why was last night bad?"` (Claude narrates your recorded evidence — it is
-never asked to invent a number) and `netpulse mcp` (serve history read-only to Claude
-Desktop/Code). Neither touches the core, and nothing AI-facing can touch a router.
+The diagnosis is deliberately deterministic — no model, no API key, no cost, the same
+answer every time, evidence attached.
 
 ## CLI
 
@@ -87,8 +84,6 @@ netpulse run [--demo] [--port 8787]   record + dashboard
 netpulse status                       latest reading per source, with 24h coverage
 netpulse events [--hours 48]          outages and degradations
 netpulse diagnose                     rule-based findings (exit 1 on critical)
-netpulse ask "question"               Claude over your own history   [ai extra]
-netpulse mcp                          serve history to MCP clients   [mcp extra]
 ```
 
 ## Design
@@ -96,7 +91,7 @@ netpulse mcp                          serve history to MCP clients   [mcp extra]
 - **Zero runtime dependencies.** stdlib only — sqlite3, urllib, tomllib, http.server.
   Installs and runs on a Raspberry Pi with nothing else.
 - One small adapter contract (`read() -> Reading`); everything else — storage, outage
-  detection, charts, insights, AI — is written against it. A new router is a new adapter,
+  detection, charts, insights — is written against it. A new router is a new adapter,
   nothing more.
 - SQLite at `~/.netpulse/history.db`, append-only samples, WAL. Dashboard is served by the
   collector process and bound to localhost by default.
@@ -104,10 +99,23 @@ netpulse mcp                          serve history to MCP clients   [mcp extra]
   behaviour is tested against recorded XML/JSON fixtures — including half-formed XML from
   a router mid-reboot, which must register as a failed poll, not a crash.
 
-## Known limits (read before trusting it)
+## Also in the box
 
-- **No retention policy yet.** Samples accumulate in SQLite indefinitely (~1.5 MB/day/source
-  at 5s cadence). A minute-rollup ladder is the next piece of work.
+- **Devices on the network** — the router's client list (name, IP, MAC, last seen),
+  polled on its own gentler cadence.
+- **On-demand speed test** — `netpulse speedtest` or the dashboard button. On demand
+  *only*: it moves ~30 MB of real data and many watched connections are metered, so
+  nothing ever schedules it, and both entry points state the cost first.
+- **OS notifications** — down, and back (with how long it lasted), throttled so a
+  flapping link cannot become a storm. `notifications = false` in the config turns it off.
+- **A retention ladder** — raw samples are kept 7 days, then folded into per-minute
+  sufficient statistics (count/sum/min/max) that compose exactly: a spike survives
+  compaction because max-of-max is exact, means stay weighted, and coverage is unchanged.
+  History is seamless across the boundary, and a year stays queryable in milliseconds.
+
+## Known limits (read before trusting it)
+- **Per-device throughput is not measured.** The device panel shows who is connected;
+  per-client byte counters vary wildly by firmware and are not yet read.
 - **Huawei/ZTE coverage is firmware-dependent.** These APIs are undocumented; fields vary
   by firmware. Missing optional endpoints degrade gracefully, but a firmware that renames
   fields needs an adapter update. SMS reading requires router credentials.

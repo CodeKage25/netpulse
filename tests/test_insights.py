@@ -115,3 +115,16 @@ def test_critical_findings_sort_first(store: Store, clock: Clock) -> None:
 
 def test_no_data_means_no_findings_not_a_crash(store: Store, clock: Clock) -> None:
     assert diagnose(store, "wan", clock.now) == []
+
+
+def test_diagnosis_reads_typical_values_not_chart_spikes(store: Store, clock: Clock) -> None:
+    """A link that is fine 95% of the time with rare spikes must not be diagnosed as an
+    upstream problem — charts show the worst moment, diagnosis describes the norm."""
+    for tick in range(240):
+        latency = 900.0 if tick % 24 == 0 else 60.0  # rare spikes on a healthy link
+        store.record(
+            "wan",
+            {"latency.internet_ms": latency, "latency.gateway_ms": 3.0, "up": 1.0},
+        )
+        clock.advance(seconds=5)
+    assert all(i.rule != "upstream_or_local" for i in diagnose(store, "wan", clock.now))

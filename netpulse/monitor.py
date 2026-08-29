@@ -8,6 +8,7 @@ from datetime import datetime
 
 from netpulse.adapters import Adapter
 from netpulse.model import EventKind, Severity
+from netpulse.notify import Notifier
 from netpulse.storage import Store, utcnow
 
 #: Three misses before an outage is declared: one failed poll is a blip, three is real.
@@ -23,6 +24,7 @@ class _SourceState:
     failures: int = 0
     slow_polls: int = 0
     outage_id: int | None = None
+    outage_started: datetime | None = None
     degraded_id: int | None = None
     skip: int = 0
     backoff: int = 0
@@ -43,10 +45,13 @@ class Collector:
         adapters: list[Adapter],
         interval_s: float = 5.0,
         clock: Callable[[], datetime] = utcnow,
+        notifier: Notifier | None = None,
     ) -> None:
         self.store = store
         self.interval_s = interval_s
         self._clock = clock
+        self._notifier = notifier
+        self._last_compact: datetime | None = None
         self._states = {adapter.name: _SourceState(adapter) for adapter in adapters}
         self._listeners: list[Callable[[str, dict[str, float]], None]] = []
 
@@ -58,6 +63,7 @@ class Collector:
         self._listeners.append(listener)
 
     def poll_once(self) -> None:
+        self._maybe_compact()
         for name, state in self._states.items():
             if state.skip > 0:
                 state.skip -= 1
@@ -67,7 +73,16 @@ class Collector:
             except Exception as exc:
                 self._failed(name, state, exc)
                 continue
+            if reading.devices is not None:
+                self.store.record_devices(name, reading.devices, at=self._clock())
             self._succeeded(name, state, reading.metrics, reading.texts)
+
+    def _maybe_compact(self) -> None:
+        now = self._clock()
+        if self._last_compact is None or (now - self._last_compact).total_seconds() >= 86400:
+            self._last_compact = now
+            with suppress(Exception):  # compaction failing must never stop recording
+                self.store.compact(now)
 
     def _failed(self, name: str, state: _SourceState, exc: Exception) -> None:
         state.failures += 1
@@ -83,6 +98,9 @@ class Collector:
                 f"unreachable: {exc}",
                 at=self._clock(),
             )
+            state.outage_started = self._clock()
+            if self._notifier:
+                self._notifier.send(f"outage:{name}", f"{name} is down", str(exc))
         self._notify(name, {"up": 0.0})
 
     def _succeeded(
@@ -98,6 +116,15 @@ class Collector:
         if state.outage_id is not None:
             self.store.close_event(state.outage_id, at=self._clock())
             state.outage_id = None
+            if self._notifier:
+                lasted = ""
+                if state.outage_started is not None:
+                    minutes = (self._clock() - state.outage_started).total_seconds() / 60
+                    lasted = f" after {max(1, round(minutes))} min"
+                # The clear carries its own key: a recovery a second after the onset is
+                # news, and sharing a key would let the onset's throttle swallow it.
+                self._notifier.send(f"outage:{name}:cleared", f"{name} is back{lasted}", "")
+            state.outage_started = None
 
         latency = recorded.get("latency.internet_ms")
         if latency is not None:

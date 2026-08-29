@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "netpulse-monitor"
-version = "0.1.0"
+version = "0.2.0"
 description = "Local-first monitoring for any home connection - MTN broadband, Starlink, fibre, anything with a gateway."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -26,8 +26,6 @@ classifiers = [
 dependencies = []
 
 [project.optional-dependencies]
-ai = ["anthropic>=0.40"]
-mcp = ["mcp>=1.2"]
 dev = ["pytest>=8.0", "pytest-cov>=5.0", "ruff>=0.6", "mypy>=1.11"]
 
 [project.scripts]
@@ -50,12 +48,6 @@ select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
 python_version = "3.11"
 warn_unused_ignores = true
 strict = true
-
-[[tool.mypy.overrides]]
-module = ["netpulse.ask", "netpulse.mcp_server"]
-strict = false
-ignore_missing_imports = true
-disable_error_code = ["import-not-found"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

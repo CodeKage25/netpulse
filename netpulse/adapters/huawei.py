@@ -21,7 +21,7 @@ from collections.abc import Callable
 from typing import Any
 
 from netpulse.adapters import AdapterError
-from netpulse.model import Reading
+from netpulse.model import DeviceSeen, Reading
 
 #: CurrentNetworkType / NetworkTypeEx codes seen in the wild. Unknown codes surface as
 #: "type_<code>" rather than a guess.
@@ -51,6 +51,10 @@ NETWORK_TYPES = {
 }
 
 CONNECTED = "901"
+
+#: The client list is heavier than the status sweep and changes slowly, so it rides
+#: every Nth cycle rather than every cycle — poll gently.
+HOST_LIST_EVERY = 6
 
 Fetch = Callable[[str, dict[str, str], bytes | None], tuple[bytes, dict[str, str]]]
 
@@ -102,6 +106,7 @@ class HuaweiAdapter:
         self._cookie = ""
         self._token = ""
         self._logged_in = False
+        self._sweeps = 0
 
     # ------------------------------------------------------------------ transport
 
@@ -217,6 +222,24 @@ class HuaweiAdapter:
         except (AdapterError, OSError):
             pass  # not every firmware has it; the sweep must not fail for a nice-to-have
 
+        devices: list[DeviceSeen] | None = None
+        self._sweeps += 1
+        if self._sweeps % HOST_LIST_EVERY == 1:
+            try:
+                hosts = self._get("/api/wlan/host-list")
+                devices = [
+                    DeviceSeen(
+                        mac=host.findtext("MacAddress", ""),
+                        name=host.findtext("HostName", "") or host.findtext("ActualName", ""),
+                        ip=host.findtext("IpAddress", ""),
+                    )
+                    for host in hosts.iter("Host")
+                    if host.findtext("MacAddress")
+                ]
+                metrics["devices.count"] = float(len(devices))
+            except (AdapterError, OSError):
+                pass  # some firmware wants a login for this; the sweep must not fail
+
         try:
             plmn = self._get("/api/net/current-plmn")
             operator = plmn.findtext("FullName") or plmn.findtext("ShortName")
@@ -225,7 +248,7 @@ class HuaweiAdapter:
         except (AdapterError, OSError):
             pass
 
-        return Reading(metrics=metrics, texts=texts)
+        return Reading(metrics=metrics, texts=texts, devices=devices)
 
     # ------------------------------------------------------------------ extras
 

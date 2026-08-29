@@ -4,12 +4,26 @@ import sqlite3
 import threading
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
-from datetime import UTC, datetime
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from netpulse.model import Agg, Coverage, Event, EventKind, Severity, agg_for
+from netpulse.model import (
+    Agg,
+    Coverage,
+    DeviceSeen,
+    Event,
+    EventKind,
+    Severity,
+    agg_for,
+)
 
 _TS = "%Y-%m-%dT%H:%M:%S.%f+00:00"
+
+#: Raw samples older than this fold into per-minute sufficient statistics. The stats
+#: compose exactly — max of maxes, sum/count for means — so nothing a chart can honestly
+#: draw is lost, and a year of history stays queryable in milliseconds.
+RAW_RETENTION = timedelta(days=7)
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS samples (
@@ -19,6 +33,16 @@ CREATE TABLE IF NOT EXISTS samples (
     value REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS samples_lookup ON samples (source, metric, at);
+CREATE TABLE IF NOT EXISTS rollup (
+    minute TEXT NOT NULL,
+    source TEXT NOT NULL,
+    metric TEXT NOT NULL,
+    count INTEGER NOT NULL,
+    sum REAL NOT NULL,
+    min REAL NOT NULL,
+    max REAL NOT NULL,
+    PRIMARY KEY (source, metric, minute)
+);
 CREATE TABLE IF NOT EXISTS texts (
     at TEXT NOT NULL,
     source TEXT NOT NULL,
@@ -26,6 +50,14 @@ CREATE TABLE IF NOT EXISTS texts (
     value TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS texts_lookup ON texts (source, metric, at);
+CREATE TABLE IF NOT EXISTS devices (
+    at TEXT NOT NULL,
+    source TEXT NOT NULL,
+    mac TEXT NOT NULL,
+    name TEXT NOT NULL DEFAULT '',
+    ip TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS devices_lookup ON devices (source, mac, at);
 CREATE TABLE IF NOT EXISTS events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     source TEXT NOT NULL,
@@ -47,16 +79,48 @@ def _dt(value: str) -> datetime:
     return datetime.strptime(value, _TS).replace(tzinfo=UTC)
 
 
+def _minute(value: str) -> str:
+    """The minute a sample timestamp falls in, as a rollup key."""
+    return value[:17] + "00.000000+00:00"
+
+
 def utcnow() -> datetime:
     return datetime.now(UTC)
 
 
-class Store:
-    """Append-only local history.
+@dataclass
+class _Stat:
+    """Sufficient statistics for one bucket. Raw values and rollup rows merge alike."""
 
-    A gap in recording stays a gap: bucketed reads return None for unsampled buckets, and
-    :meth:`coverage` reports how much of a window was actually seen, so nothing downstream
-    can honestly pretend otherwise.
+    count: int = 0
+    sum: float = 0.0
+    min: float = float("inf")
+    max: float = float("-inf")
+
+    def add(self, count: int, total: float, low: float, high: float) -> None:
+        self.count += count
+        self.sum += total
+        self.min = min(self.min, low)
+        self.max = max(self.max, high)
+
+    def finish(self, how: Agg) -> float:
+        if how is Agg.MAX:
+            return self.max
+        if how is Agg.MIN:
+            return self.min
+        if how is Agg.LAST:
+            # LAST metrics are monotonic counters (data.month_down_bytes), so within any
+            # window the newest value is also the largest; max preserves it exactly.
+            return self.max
+        return self.sum / self.count
+
+
+class Store:
+    """Append-only local history with an honest rollup ladder.
+
+    A gap in recording stays a gap: bucketed reads return None for unsampled buckets,
+    and :meth:`coverage` reports how much of a window was actually seen — across both
+    raw samples and compacted minutes, so compaction never inflates or deflates it.
     """
 
     def __init__(self, path: str | Path = ":memory:", clock: Callable[[], datetime] = utcnow):
@@ -112,6 +176,60 @@ class Store:
                 for _, src, metric, value in changed:
                     self._last_text[(src, metric)] = value
 
+    def record_devices(
+        self, source: str, devices: list[DeviceSeen], at: datetime | None = None
+    ) -> None:
+        moment = _ts(at or self._clock())
+        with self._tx() as conn:
+            conn.executemany(
+                "INSERT INTO devices (at, source, mac, name, ip) VALUES (?, ?, ?, ?, ?)",
+                [(moment, source, d.mac, d.name, d.ip) for d in devices],
+            )
+
+    # ------------------------------------------------------------------ compaction
+
+    def compact(self, now: datetime | None = None) -> int:
+        """Fold raw samples older than the retention window into per-minute statistics.
+
+        Fold and delete happen in one transaction, so a crash cannot double-count a
+        minute: either both landed or neither did. Returns raw rows folded.
+        """
+        cutoff = _ts((now or self._clock()) - RAW_RETENTION)
+        with self._tx() as conn:
+            aged = conn.execute(
+                "SELECT source, metric, at, value FROM samples WHERE at < ? ORDER BY at",
+                (cutoff,),
+            ).fetchall()
+            if not aged:
+                return 0
+
+            folded: dict[tuple[str, str, str], _Stat] = {}
+            for row in aged:
+                key = (row["source"], row["metric"], _minute(row["at"]))
+                folded.setdefault(key, _Stat()).add(1, row["value"], row["value"], row["value"])
+
+            conn.executemany(
+                "INSERT INTO rollup (source, metric, minute, count, sum, min, max) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT (source, metric, minute) DO UPDATE SET "
+                "count = count + excluded.count, sum = sum + excluded.sum, "
+                "min = MIN(min, excluded.min), max = MAX(max, excluded.max)",
+                [
+                    (source, metric, minute, stat.count, stat.sum, stat.min, stat.max)
+                    for (source, metric, minute), stat in folded.items()
+                ],
+            )
+            conn.execute("DELETE FROM samples WHERE at < ?", (cutoff,))
+            # Old per-poll device sightings coarsen to one per minute the same way.
+            conn.execute(
+                "DELETE FROM devices WHERE rowid NOT IN ("
+                "  SELECT MIN(rowid) FROM devices WHERE at < ?"
+                "  GROUP BY source, mac, substr(at, 1, 17)"
+                ") AND at < ?",
+                (cutoff, cutoff),
+            )
+            return len(aged)
+
     # ------------------------------------------------------------------ reading
 
     def latest(self, source: str) -> dict[str, tuple[datetime, float]]:
@@ -134,6 +252,30 @@ class Store:
             ).fetchall()
         return {row["metric"]: row["value"] for row in rows}
 
+    def devices(self, source: str, since: datetime) -> list[dict[str, object]]:
+        """Devices seen on the network since ``since``, newest sighting first."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT mac, MAX(at) AS last_seen, "
+                "  (SELECT name FROM devices d2 WHERE d2.source = devices.source "
+                "   AND d2.mac = devices.mac AND d2.name != '' "
+                "   ORDER BY at DESC LIMIT 1) AS name, "
+                "  (SELECT ip FROM devices d3 WHERE d3.source = devices.source "
+                "   AND d3.mac = devices.mac ORDER BY at DESC LIMIT 1) AS ip "
+                "FROM devices WHERE source = ? AND at >= ? "
+                "GROUP BY mac ORDER BY last_seen DESC",
+                (source, _ts(since)),
+            ).fetchall()
+        return [
+            {
+                "mac": row["mac"],
+                "name": row["name"] or "",
+                "ip": row["ip"] or "",
+                "last_seen": _dt(row["last_seen"]).isoformat(),
+            }
+            for row in rows
+        ]
+
     def history(
         self,
         source: str,
@@ -145,58 +287,75 @@ class Store:
     ) -> list[tuple[datetime, float | None]]:
         """``buckets`` evenly-spaced points; None where nothing was sampled.
 
-        The aggregation comes from the metric registry: latency buckets by max so a spike
-        survives downsampling instead of averaging away into a lie.
+        Reads raw samples and compacted minutes together, so a chart spanning the
+        retention boundary is seamless. The aggregation comes from the metric registry:
+        latency buckets by max so a spike survives downsampling — and survives
+        compaction, because the rollup keeps the max.
         """
         how = agg or agg_for(metric)
         span = (until - since).total_seconds()
         if span <= 0 or buckets <= 0:
             return []
         width = span / buckets
-        with self._lock:
-            rows = self._conn.execute(
-                "SELECT at, value FROM samples WHERE source = ? AND metric = ? "
-                "AND at >= ? AND at < ? ORDER BY at",
-                (source, metric, _ts(since), _ts(until)),
-            ).fetchall()
 
-        filled: list[list[float]] = [[] for _ in range(buckets)]
-        for row in rows:
-            index = int((_dt(row["at"]) - since).total_seconds() / width)
-            filled[min(index, buckets - 1)].append(row["value"])
+        def bucket_of(stamp: str) -> int:
+            index = int((_dt(stamp) - since).total_seconds() / width)
+            return min(index, buckets - 1)
+
+        stats: dict[int, _Stat] = {}
+        with self._lock:
+            for row in self._conn.execute(
+                "SELECT at, value FROM samples WHERE source = ? AND metric = ? "
+                "AND at >= ? AND at < ?",
+                (source, metric, _ts(since), _ts(until)),
+            ):
+                stats.setdefault(bucket_of(row["at"]), _Stat()).add(
+                    1, row["value"], row["value"], row["value"]
+                )
+            for row in self._conn.execute(
+                "SELECT minute, count, sum, min, max FROM rollup "
+                "WHERE source = ? AND metric = ? AND minute >= ? AND minute < ?",
+                (source, metric, _ts(since), _ts(until)),
+            ):
+                stats.setdefault(bucket_of(row["minute"]), _Stat()).add(
+                    row["count"], row["sum"], row["min"], row["max"]
+                )
 
         out: list[tuple[datetime, float | None]] = []
-        for index, values in enumerate(filled):
+        for index in range(buckets):
             start = since + (until - since) * (index / buckets)
-            if not values:
-                out.append((start, None))
-            elif how is Agg.MAX:
-                out.append((start, max(values)))
-            elif how is Agg.MIN:
-                out.append((start, min(values)))
-            elif how is Agg.LAST:
-                out.append((start, values[-1]))
-            else:
-                out.append((start, sum(values) / len(values)))
+            stat = stats.get(index)
+            out.append((start, stat.finish(how) if stat else None))
         return out
 
     def coverage(
         self, source: str, since: datetime, until: datetime, interval_s: float
     ) -> Coverage:
-        """Distinct poll moments seen vs expected. `up` is written on every poll, success
-        or failure, so it is the heartbeat this counts."""
+        """Poll moments seen vs expected, across raw and compacted history alike.
+
+        `up` is written on every poll, success or failure, so it is the heartbeat; a
+        compacted minute contributes the polls it folded, so compaction cannot change
+        what a window claims was recorded.
+        """
         with self._lock:
-            row = self._conn.execute(
+            raw = self._conn.execute(
                 "SELECT COUNT(DISTINCT at) AS n FROM samples WHERE source = ? "
                 "AND metric = 'up' AND at >= ? AND at < ?",
                 (source, _ts(since), _ts(until)),
-            ).fetchone()
+            ).fetchone()["n"]
+            rolled = self._conn.execute(
+                "SELECT COALESCE(SUM(count), 0) AS n FROM rollup WHERE source = ? "
+                "AND metric = 'up' AND minute >= ? AND minute < ?",
+                (source, _ts(since), _ts(until)),
+            ).fetchone()["n"]
         expected = max(1, int((until - since).total_seconds() / interval_s))
-        return Coverage(sampled=row["n"], expected=expected)
+        return Coverage(sampled=raw + rolled, expected=expected)
 
     def sources(self) -> list[str]:
         with self._lock:
-            rows = self._conn.execute("SELECT DISTINCT source FROM samples ORDER BY source")
+            rows = self._conn.execute(
+                "SELECT source FROM samples UNION SELECT source FROM rollup ORDER BY source"
+            )
             return [row["source"] for row in rows.fetchall()]
 
     # ------------------------------------------------------------------ events

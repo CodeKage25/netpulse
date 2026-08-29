@@ -6,15 +6,26 @@ from enum import StrEnum
 
 
 @dataclass(frozen=True, slots=True)
+class DeviceSeen:
+    """One client the router reports on its network."""
+
+    mac: str
+    name: str = ""
+    ip: str = ""
+
+
+@dataclass(frozen=True, slots=True)
 class Reading:
     """One successful poll of one source.
 
     ``metrics`` are numeric and chartable; ``texts`` are labels (network type, band,
-    operator) that change rarely and are stored only when they do.
+    operator) that change rarely and are stored only when they do; ``devices`` is the
+    router's client list, present only on the cycles an adapter chose to fetch it.
     """
 
     metrics: dict[str, float] = field(default_factory=dict)
     texts: dict[str, str] = field(default_factory=dict)
+    devices: list[DeviceSeen] | None = None
 
 
 class Agg(StrEnum):
@@ -36,6 +47,7 @@ AGG_RULES: dict[str, Agg] = {
     "traffic.": Agg.MEAN,
     "data.": Agg.LAST,
     "devices.": Agg.LAST,
+    "speedtest.": Agg.LAST,
     "up": Agg.MIN,  # a bucket that saw any failure shows as down
 }
 

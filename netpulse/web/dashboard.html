@@ -84,8 +84,18 @@
   .facts { display: flex; gap: 18px; flex-wrap: wrap; font-size: 12.5px; color: var(--text-2); }
   .facts b { color: var(--text); font-weight: 600; }
   .empty { color: var(--text-3); font-size: 12.5px; padding: 8px 0; }
-  select { font: inherit; background: var(--panel); color: var(--text);
+  select, .btn { font: inherit; background: var(--panel); color: var(--text);
     border: 1px solid var(--border); border-radius: 7px; padding: 4px 8px; }
+  .btn { cursor: pointer; font-size: 12.5px; color: var(--text-2); }
+  .btn:disabled { opacity: 0.5; cursor: wait; }
+  .ylabel { position: absolute; left: 0; width: 38px; text-align: right; font-size: 11px;
+    color: var(--text-3); transform: translateY(-50%); pointer-events: none;
+    font-variant-numeric: tabular-nums; }
+  .device { display: flex; gap: 10px; align-items: baseline; padding: 6px 0;
+    border-top: 1px solid var(--border); font-size: 12.5px; }
+  .device:first-of-type { border-top: 0; }
+  .device .name { font-weight: 600; min-width: 140px; }
+  .device .meta { color: var(--text-3); font-variant-numeric: tabular-nums; }
 </style>
 </head>
 <body>
@@ -93,6 +103,7 @@
   <h1><span class="status-dot" id="dot"></span>NetPulse</h1>
   <span class="sub" id="subtitle">connecting…</span>
   <span style="flex:1"></span>
+  <button class="btn" id="speedtest">Speed test</button>
   <select id="source"></select>
 </header>
 <main>
@@ -123,6 +134,11 @@
   <div class="grid2">
     <div class="panel"><h2>Diagnosis</h2><div id="insights"><div class="empty">Gathering evidence…</div></div></div>
     <div class="panel"><h2>Events</h2><div id="events"><div class="empty">No outages recorded.</div></div></div>
+  </div>
+
+  <div class="panel" id="devices-panel" hidden>
+    <h2>Devices on the network</h2>
+    <div id="devices"></div>
   </div>
 
   <div class="panel"><h2>Connection</h2><div class="facts" id="facts"></div></div>
@@ -178,17 +194,19 @@ function lineChart(el, seriesList, opts) {
   for (const [i, v] of (seriesList[0]?.points || []).entries()) {
     if (v == null) svg += `<rect x="${x(Math.max(0, i - 0.5))}" y="${pad.t}" width="${(W - pad.l - pad.r) / n}" height="${H - pad.t - pad.b}" fill="var(--gap)"/>`;
   }
+  let labels = "";
   for (let g = 0; g <= 3; g++) {
     const value = lo + ((top - lo) * g) / 3, yy = y(value);
-    svg += `<line x1="${pad.l}" y1="${yy}" x2="${W - pad.r}" y2="${yy}" stroke="var(--grid)" stroke-width="1"/>`
-        + `<text x="${pad.l - 6}" y="${yy + 4}" text-anchor="end" font-size="11" fill="var(--text-3)">${format(value)}</text>`;
+    svg += `<line x1="${pad.l}" y1="${yy}" x2="${W - pad.r}" y2="${yy}" stroke="var(--grid)" stroke-width="1"/>`;
+    // Labels live in HTML, not the SVG: preserveAspectRatio="none" stretches the plot
+    // non-uniformly, and squashed text is what that does to <text> elements.
+    labels += `<span class="ylabel" style="top:${(yy / H) * 100}%">${format(value)}</span>`;
   }
   for (const s of seriesList) {
     svg += `<path d="${paths(s.points, x, y)}" fill="none" stroke="${s.color}" stroke-width="2" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`;
   }
   svg += `<line id="cross" x1="0" x2="0" y1="${pad.t}" y2="${H - pad.t - pad.b + pad.t}" stroke="var(--text-3)" stroke-width="1" opacity="0"/>`;
-  svg += `</svg><div class="tooltip"></div>`;
-  el.innerHTML = svg;
+  el.innerHTML = svg + `</svg>` + labels + `<div class="tooltip"></div>`;
 
   const node = el.querySelector("svg"), tip = el.querySelector(".tooltip"), cross = el.querySelector("#cross");
   node.addEventListener("mousemove", event => {
@@ -265,9 +283,13 @@ async function refresh() {
     tiles += tile("Loss", m["loss.pct"].toFixed(0), "%", spark["loss.pct"], orange);
   if (m["data.month_down_bytes"] != null)
     tiles += tile("Data this month", fmt.bytes(m["data.month_down_bytes"] + (m["data.month_up_bytes"] || 0)), "", null, blue);
+  if (src.uptime_24h != null)
+    tiles += tile("Uptime · 24h", (src.uptime_24h * 100).toFixed(1), "%", null, blue);
+  if (m["speedtest.down_bytes_s"] != null)
+    tiles += tile("Last speed test", fmt.mbps(m["speedtest.down_bytes_s"]), "Mbps ↓", null, blue);
   document.getElementById("tiles").innerHTML = tiles;
 
-  await Promise.all([drawCharts(), drawInsights(), drawEvents()]);
+  await Promise.all([drawCharts(), drawInsights(), drawEvents(), drawDevices()]);
 
   const facts = [];
   for (const [key, label] of [["net.operator", "Operator"], ["net.type", "Network"],
@@ -343,6 +365,17 @@ async function drawEvents() {
     : `<div class="empty">No outages recorded.</div>`;
 }
 
+async function drawDevices() {
+  const data = await json(`/api/devices?source=${encodeURIComponent(state.source)}&hours=24`);
+  const panel = document.getElementById("devices-panel");
+  panel.hidden = data.devices.length === 0;
+  document.getElementById("devices").innerHTML = data.devices.map(d =>
+    `<div class="device"><span class="name">${d.name || "unnamed device"}</span>
+     <span class="meta">${d.ip}</span><span class="meta">${d.mac}</span>
+     <span style="flex:1"></span><span class="meta">seen ${fmt.when(d.last_seen)}</span></div>`
+  ).join("");
+}
+
 /* ------------------------------------ wiring ------------------------------------ */
 
 document.getElementById("ranges").innerHTML =
@@ -356,6 +389,22 @@ document.getElementById("ranges").addEventListener("click", event => {
 });
 document.getElementById("source").addEventListener("change", event => {
   state.source = event.target.value; refresh();
+});
+
+document.getElementById("speedtest").addEventListener("click", async event => {
+  const button = event.target;
+  // It moves ~30 MB of real data, and many watched connections are metered.
+  if (!confirm("A speed test moves about 30 MB of real data. Run it?")) return;
+  button.disabled = true; button.textContent = "Testing…";
+  try {
+    const response = await fetch(`/api/speedtest?source=${encodeURIComponent(state.source)}`, { method: "POST" });
+    const result = await response.json();
+    button.textContent = result.error
+      ? "Speed test failed"
+      : `↓ ${result.down_mbps} / ↑ ${result.up_mbps} Mbps`;
+    refresh();
+  } catch { button.textContent = "Speed test failed"; }
+  setTimeout(() => { button.textContent = "Speed test"; button.disabled = false; }, 8000);
 });
 
 refresh();

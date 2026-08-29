@@ -105,6 +105,8 @@ def test_huawei_refreshes_a_stale_session_once() -> None:
         if path == "/api/monitoring/status" and served["count"] == 0:
             served["count"] += 1
             return API_ERROR, {}
+        if path not in fresh:
+            raise OSError("connection refused")
         return fresh[path], {}
 
     reading = HuaweiAdapter("mtn", fetch=fetch).read()
@@ -150,6 +152,8 @@ def test_huawei_sms_list_parses_messages() -> None:
             return sms, {}
         if data is not None:
             return b"<response>OK</response>", {}
+        if path not in HUAWEI_ROUTES:
+            raise OSError("connection refused")
         return HUAWEI_ROUTES[path], {}
 
     adapter = HuaweiAdapter("mtn", username="admin", password="pass", fetch=fetch)

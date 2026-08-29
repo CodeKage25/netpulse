@@ -13,6 +13,7 @@ from urllib.parse import parse_qs, urlparse
 
 from netpulse.insights import diagnose
 from netpulse.monitor import Collector
+from netpulse.speedtest import run_speedtest
 from netpulse.storage import Store, utcnow
 
 SPARK_POINTS = 30
@@ -73,10 +74,33 @@ class Api:
                     "coverage": self.store.coverage(
                         name, now - timedelta(hours=1), now, self.interval_s
                     ).fraction,
+                    "uptime_24h": self._uptime(name, now),
                     "in_outage": status.get(name, {}).get("in_outage", False),
                 }
             )
         return {"sources": sources, "now": now.isoformat()}
+
+    def _uptime(self, source: str, now: datetime) -> float | None:
+        """Fraction of *recorded* polls that were up. Unrecorded time is excluded, not
+        assumed up — coverage says how much of the day this figure actually covers."""
+        series = self.store.history(source, "up", now - timedelta(hours=24), now, 288, None)
+        seen = [value for _, value in series if value is not None]
+        if not seen:
+            return None
+        return sum(1 for value in seen if value >= 1.0) / len(seen)
+
+    def devices(self, source: str, hours: float) -> dict[str, Any]:
+        return {
+            "devices": self.store.devices(source, self._clock() - timedelta(hours=hours)),
+        }
+
+    def speedtest(self, source: str) -> dict[str, Any]:
+        result = run_speedtest(self.store, source)
+        return {
+            "down_mbps": round(result.down_mbps, 1),
+            "up_mbps": round(result.up_mbps, 1),
+            "seconds": round(result.seconds, 1),
+        }
 
     def history(self, source: str, metric: str, minutes: int, buckets: int) -> dict[str, Any]:
         now = self._clock()
@@ -170,12 +194,30 @@ def make_handler(api: Api) -> type[BaseHTTPRequestHandler]:
                     self._json(api.events(int(params.get("minutes", 1440))))
                 elif url.path == "/api/insights":
                     self._json(api.insights(params.get("source", "")))
+                elif url.path == "/api/devices":
+                    self._json(
+                        api.devices(params.get("source", ""), float(params.get("hours", 24)))
+                    )
                 elif url.path == "/api/stream":
                     self._sse()
                 else:
                     self._json({"error": "not found"}, 404)
             except BrokenPipeError:
                 pass
+            except Exception as exc:
+                self._json({"error": str(exc)}, 500)
+
+        def do_POST(self) -> None:
+            url = urlparse(self.path)
+            params = {key: values[0] for key, values in parse_qs(url.query).items()}
+            try:
+                if url.path == "/api/speedtest":
+                    # Deliberately synchronous and deliberately POST-only: it moves real
+                    # data on what may be a metered plan, so only an explicit click or
+                    # curl -X POST triggers it, never a page load.
+                    self._json(api.speedtest(params.get("source", "")))
+                else:
+                    self._json({"error": "not found"}, 404)
             except Exception as exc:
                 self._json({"error": str(exc)}, 500)
 

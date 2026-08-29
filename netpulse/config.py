@@ -46,6 +46,7 @@ class Config:
     interval_s: float = 5.0
     db_path: Path = DEFAULT_DB
     port: int = 8787
+    notifications: bool = True
 
 
 def load(path: Path | None = None) -> Config:
@@ -68,4 +69,5 @@ def load(path: Path | None = None) -> Config:
         interval_s=float(data.get("interval_s", 5.0)),
         db_path=Path(data.get("db", DEFAULT_DB)).expanduser(),
         port=int(data.get("port", 8787)),
+        notifications=bool(data.get("notifications", True)),
     )
