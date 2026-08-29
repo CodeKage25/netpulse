@@ -19,6 +19,10 @@ class Clock:
     def advance(self, **delta: float) -> None:
         self.now += timedelta(**delta)
 
+    def set(self, when: datetime) -> None:
+        """Jump to a fixed moment — billing cycles only make sense on real dates."""
+        self.now = when
+
 
 @pytest.fixture
 def clock() -> Clock:

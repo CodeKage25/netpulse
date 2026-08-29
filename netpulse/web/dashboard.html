@@ -126,6 +126,19 @@
   .tooltip .t { color: var(--text-3); font-size: 10.5px; margin-bottom: 2px; }
 
   /* ------------------------------------------------ right column */
+  .meter { height: 9px; border-radius: 5px; background: var(--raised); overflow: hidden;
+    margin: 9px 0 7px; display: flex; }
+  .meter i { display: block; height: 100%; background: var(--down); }
+  .meter i.warn { background: var(--warning); }
+  .meter i.over { background: var(--critical); }
+  /* Where the cycle is up to, so "68% used" can be read against "60% elapsed". */
+  .meter u { display: block; width: 2px; background: var(--text-2); flex: none; }
+  .allow-top { display: flex; align-items: baseline; gap: 8px; }
+  .allow-top .big { font-size: 27px; font-weight: 700; letter-spacing: -.015em;
+    font-variant-numeric: tabular-nums; }
+  .allow-top .of { color: var(--text-2); font-size: 12.5px; }
+  .verdict { font-size: 12px; margin-top: 2px; }
+  .verdict.good { color: var(--good); } .verdict.bad { color: var(--serious); }
   .grade-row { display: flex; align-items: center; gap: 16px; }
   .grade { font-size: 48px; font-weight: 800; line-height: 1; letter-spacing: -.02em; }
   .grade.A { color: var(--good); } .grade.B { color: var(--up); }
@@ -246,6 +259,10 @@
     </div>
 
     <div>
+      <div class="panel" id="allowance-panel" hidden>
+        <div class="panel-head"><h2>Data allowance</h2><span class="hint" id="cycle-hint"></span></div>
+        <div id="allowance"></div>
+      </div>
       <div class="panel">
         <div class="panel-head"><h2>Connection quality</h2><span class="hint">last hour</span></div>
         <div id="quality"><div class="empty">Measuring — a fair grade needs a little history.</div></div>
@@ -595,7 +612,8 @@ async function refresh() {
     (Math.max(...overview.sources.map(s => s.coverage)) * 100).toFixed(0)}% of the last hour</span>`);
   document.getElementById("facts").innerHTML = facts.join("");
 
-  await Promise.all([drawCharts(), drawQuality(), drawInsights(), drawEvents(), drawDevices()]);
+  await Promise.all([drawCharts(), drawQuality(), drawAllowance(),
+                     drawInsights(), drawEvents(), drawDevices()]);
   firstPaintDone = true;
 }
 
@@ -716,6 +734,55 @@ async function drawQuality() {
         jitter <b>${quality.jitter_ms}ms</b> · loss <b>${quality.loss_pct}%</b>
       </div>
     </div>`;
+}
+
+async function drawAllowance() {
+  // Owned by whichever source publishes an odometer — only a router has one.
+  const source = state.owner["data.month_total_bytes"] || state.owner["data.month_down_bytes"];
+  const panel = document.getElementById("allowance-panel");
+  if (!source) { panel.hidden = true; return; }
+  const { allowance } = await json(`/api/allowance?source=${encodeURIComponent(source)}`);
+  if (!allowance) { panel.hidden = true; return; }
+  panel.hidden = false;
+
+  const used = fmt.bytes(allowance.used_bytes);
+  const elapsed = Math.min(1, allowance.days_elapsed / allowance.days_total);
+  const left = allowance.days_total - allowance.days_elapsed;
+  document.getElementById("cycle-hint").textContent =
+    `${left < 1 ? "last day" : Math.ceil(left) + " days left"} · resets ${
+      new Date(allowance.cycle_end + "T00:00:00").toLocaleDateString([], { month: "short", day: "numeric" })}`;
+
+  if (allowance.limit_bytes == null) {
+    // No plan configured: report the meter, do not invent a limit to judge it against.
+    document.getElementById("allowance").innerHTML = `
+      <div class="allow-top"><span class="big">${used}</span>
+        <span class="of">used this cycle</span></div>
+      <div class="verdict" style="color:var(--text-3)">
+        Add <code>limit_gb</code> under <code>[plan]</code> in your config to track it
+        against your allowance.</div>`;
+    return;
+  }
+
+  const fraction = allowance.fraction;
+  const tone = fraction >= 1 ? "over" : fraction >= 0.8 ? "warn" : "";
+  const verdict = allowance.on_track === null ? ""
+    : allowance.exhausted_on
+      ? `<div class="verdict bad">At this rate it runs out on ${
+          new Date(allowance.exhausted_on + "T00:00:00").toLocaleDateString([], { month: "short", day: "numeric" })
+        } — ${fmt.bytes(allowance.projected_bytes)} projected for the cycle.</div>`
+      : `<div class="verdict good">On track — ${fmt.bytes(allowance.projected_bytes)} projected against ${fmt.bytes(allowance.limit_bytes)}.</div>`;
+
+  document.getElementById("allowance").innerHTML = `
+    <div class="allow-top"><span class="big">${used}</span>
+      <span class="of">of ${fmt.bytes(allowance.limit_bytes)} · ${(fraction * 100).toFixed(0)}%</span></div>
+    <div class="meter">
+      <i class="${tone}" style="width:${Math.min(100, fraction * 100).toFixed(1)}%"></i>
+      ${fraction < elapsed ? `<span style="flex:1"></span>` : ""}
+    </div>
+    <div style="font-size:11px;color:var(--text-3)">
+      ${(elapsed * 100).toFixed(0)}% of the cycle elapsed${
+        allowance.rate_per_day ? ` · ${fmt.bytes(allowance.rate_per_day)}/day so far` : ""}</div>
+    ${verdict}`;
 }
 
 async function drawInsights() {

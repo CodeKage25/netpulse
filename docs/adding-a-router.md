@@ -35,8 +35,10 @@ Fetch them and search for the request shape. Router web roots are usually gzippe
 
 ```python
 import gzip, urllib.request
-request = urllib.request.Request("http://192.168.0.1/js/app.js",
-                                 headers={"Accept-Encoding": "gzip"})
+
+request = urllib.request.Request(
+    "http://192.168.0.1/js/app.js", headers={"Accept-Encoding": "gzip"}
+)
 body = urllib.request.urlopen(request, timeout=10).read()
 if body[:2] == b"\x1f\x8b":
     body = gzip.decompress(body)
@@ -101,11 +103,13 @@ Vendor(
     name="ZLT",
     kind="zlt",
     addresses=("192.168.0.1", "192.168.1.1"),
-    signatures=(Signature(
-        "/cgi-bin/http.cgi",
-        body=b'{"cmd":113,"method":"GET","sessionId":""}',
-        headers={"Content-Type": "application/json;charset=UTF-8"},
-    ),),
+    signatures=(
+        Signature(
+            "/cgi-bin/http.cgi",
+            body=b'{"cmd":113,"method":"GET","sessionId":""}',
+            headers={"Content-Type": "application/json;charset=UTF-8"},
+        ),
+    ),
     match=_match_zlt,
 )
 ```

@@ -36,7 +36,13 @@ def run(args: argparse.Namespace) -> int:
     config = _config(args)
     store = Store(config.db_path if str(config.db_path) != ":memory:" else ":memory:")
     notifier = Notifier() if config.notifications else None
-    collector = Collector(store, _adapters(config), interval_s=config.interval_s, notifier=notifier)
+    collector = Collector(
+        store,
+        _adapters(config),
+        interval_s=config.interval_s,
+        notifier=notifier,
+        plan=config.plan,
+    )
     api = Api(store, collector, config.interval_s)
 
     def persist(source: SourceConfig) -> None:
@@ -46,6 +52,7 @@ def run(args: argparse.Namespace) -> int:
         save_sources([source, *existing])
 
     api.persist_sources = persist
+    api.plan = config.plan
 
     stop = threading.Event()
     thread = threading.Thread(target=collector.run, args=(stop,), daemon=True)

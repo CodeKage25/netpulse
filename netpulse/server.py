@@ -12,6 +12,7 @@ from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 from netpulse.adapters import build
+from netpulse.allowance import assess as assess_allowance
 from netpulse.config import SourceConfig
 from netpulse.discover import discover
 from netpulse.insights import diagnose
@@ -40,6 +41,8 @@ class Api:
         self._clock = clock
         #: Called with each added SourceConfig so it survives a restart; None in tests.
         self.persist_sources: Any = None
+        #: The configured data plan, if any. Set by the runner; absent in tests.
+        self.plan: Any = None
         self._streams: list[queue.Queue[str]] = []
         self._streams_lock = threading.Lock()
         collector.subscribe(self._publish)
@@ -145,6 +148,28 @@ class Api:
                 {"lo": low + i * width, "hi": low + (i + 1) * width, "count": count}
                 for i, count in enumerate(counts)
             ],
+        }
+
+    def allowance(self, source: str) -> dict[str, Any]:
+        limit = getattr(self.plan, "limit_bytes", None)
+        reset_day = int(getattr(self.plan, "reset_day", 1) or 1)
+        result = assess_allowance(self.store, source, self._clock(), limit, reset_day)
+        if result is None:
+            return {"allowance": None}
+        return {
+            "allowance": {
+                "used_bytes": result.used_bytes,
+                "limit_bytes": result.limit_bytes,
+                "fraction": result.fraction,
+                "cycle_start": result.cycle_start.isoformat(),
+                "cycle_end": result.cycle_end.isoformat(),
+                "days_elapsed": round(result.days_elapsed, 2),
+                "days_total": result.days_total,
+                "rate_per_day": result.rate_per_day,
+                "projected_bytes": result.projected_bytes,
+                "exhausted_on": result.exhausted_on.isoformat() if result.exhausted_on else None,
+                "on_track": result.on_track,
+            }
         }
 
     def quality(self, source: str) -> dict[str, Any]:
@@ -297,6 +322,8 @@ def make_handler(api: Api) -> type[BaseHTTPRequestHandler]:
                             int(params.get("minutes", "60")),
                         )
                     )
+                elif url.path == "/api/allowance":
+                    self._json(api.allowance(params.get("source", "")))
                 elif url.path == "/api/quality":
                     self._json(api.quality(params.get("source", "")))
                 elif url.path == "/api/devices":

@@ -7,6 +7,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 
 from netpulse.adapters import Adapter
+from netpulse.allowance import assess as assess_allowance
+from netpulse.allowance import crossed, format_bytes
 from netpulse.model import EventKind, Severity
 from netpulse.notify import Notifier
 from netpulse.storage import Store, utcnow
@@ -46,11 +48,16 @@ class Collector:
         interval_s: float = 5.0,
         clock: Callable[[], datetime] = utcnow,
         notifier: Notifier | None = None,
+        plan: object | None = None,
     ) -> None:
         self.store = store
         self.interval_s = interval_s
         self._clock = clock
         self._notifier = notifier
+        self._plan = plan
+        #: Last known allowance fraction per source, so a threshold announces itself
+        #: once on the way past rather than every poll while sitting above it.
+        self._allowance_seen: dict[str, float] = {}
         self._last_compact: datetime | None = None
         self._states = {adapter.name: _SourceState(adapter) for adapter in adapters}
         self._listeners: list[Callable[[str, dict[str, float]], None]] = []
@@ -158,7 +165,44 @@ class Collector:
             if state.slow_polls == 0 and state.degraded_id is not None:
                 self.store.close_event(state.degraded_id, at=self._clock())
                 state.degraded_id = None
+        if any(key.startswith("data.month") for key in recorded):
+            self._check_allowance(name)
         self._notify(name, recorded)
+
+    def _check_allowance(self, name: str) -> None:
+        """Announce a crossed data threshold once, on the way past.
+
+        Only ever runs on a poll that carried a fresh odometer reading — checking on
+        every poll would re-derive the same figure hundreds of times an hour to say
+        nothing, and these are the numbers people are billed on.
+        """
+        limit = getattr(self._plan, "limit_bytes", None)
+        if not self._notifier or not limit:
+            return
+        result = assess_allowance(
+            self.store, name, self._clock(), limit, int(getattr(self._plan, "reset_day", 1))
+        )
+        if result is None:
+            return
+        fraction = result.fraction
+        threshold = crossed(self._allowance_seen.get(name), fraction)
+        if fraction is not None:
+            self._allowance_seen[name] = fraction
+        if threshold is None:
+            return
+        used, cap = format_bytes(result.used_bytes), format_bytes(limit)
+        if threshold >= 1.0:
+            body = f"{used} of {cap} used. Expect throttling or charges."
+        elif result.exhausted_on:
+            body = (
+                f"{used} of {cap} used — at this rate it runs out on {result.exhausted_on:%d %b}."
+            )
+        else:
+            body = f"{used} of {cap} used, and on track for the cycle."
+        # Keyed on the threshold so each level announces itself at most once per cycle.
+        self._notifier.send(
+            f"allowance:{name}:{threshold}", f"{name}: {threshold:.0%} of data used", body
+        )
 
     def _notify(self, name: str, metrics: dict[str, float]) -> None:
         for listener in self._listeners:

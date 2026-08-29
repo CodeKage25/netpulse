@@ -131,6 +131,27 @@ auto-discovery, the model name in the UI, and a place in the diagnostic. Discove
 reports routers it can name but not yet read, so an unsupported box is a message about
 a missing adapter rather than a silent "no router found".
 
+## Data allowance
+
+A router's monthly counter is an odometer, and it does not agree with your billing
+cycle: it resets when the firmware feels like it, zeroes on a reboot, and starts on the
+router's schedule rather than the day your plan renews. NetPulse measures against a
+movable anchor — the reading when the cycle began — and treats every backwards step as
+a reset rather than negative usage, because the data before it was still used. Getting
+that wrong reads as a sudden refund of a month's traffic.
+
+```toml
+[plan]
+limit_gb = 100
+reset_day = 15    # carriers rarely renew on the 1st
+```
+
+You get usage against the cycle, a plain linear run-rate, the date it runs out at that
+rate, and an OS notification at 50/80/95/100% — each level announcing itself once, on
+the way past. The projection is deliberately simple arithmetic: a cleverer forecast
+would be more confident without being more right, and this one can be checked in your
+head.
+
 ## The dashboard
 
 A dark instrument panel in Dishylink's manner — huge live figures with sparklines, area

@@ -19,6 +19,10 @@ the zero-setup story. A config adds router adapters:
     [[source]]
     name = "wan"
     kind = "probe"
+
+    [plan]
+    limit_gb = 100          # what the plan sells; omit if uncapped
+    reset_day = 15          # the day the allowance renews, not necessarily the 1st
 """
 
 from __future__ import annotations
@@ -41,12 +45,37 @@ class SourceConfig:
 
 
 @dataclass(frozen=True)
+class Plan:
+    """A data allowance to measure against. Absent means "just tell me what I used"."""
+
+    #: Gigabytes per cycle, as sold. None when the plan is uncapped or unknown.
+    limit_gb: float | None = None
+    #: Day of the month the allowance renews. Carriers rarely use the 1st.
+    reset_day: int = 1
+
+    @property
+    def limit_bytes(self) -> float | None:
+        return self.limit_gb * 1_000_000_000 if self.limit_gb else None
+
+
+@dataclass(frozen=True)
 class Config:
     sources: tuple[SourceConfig, ...]
     interval_s: float = 5.0
     db_path: Path = DEFAULT_DB
     port: int = 8787
     notifications: bool = True
+    plan: Plan = field(default_factory=lambda: Plan())
+
+
+def _plan(raw: Any) -> Plan:
+    if not isinstance(raw, dict):
+        return Plan()
+    limit = raw.get("limit_gb")
+    return Plan(
+        limit_gb=float(limit) if limit else None,
+        reset_day=int(raw.get("reset_day", 1)),
+    )
 
 
 def save_sources(sources: list[SourceConfig], path: Path | None = None) -> Path:
@@ -90,4 +119,5 @@ def load(path: Path | None = None) -> Config:
         db_path=Path(data.get("db", DEFAULT_DB)).expanduser(),
         port=int(data.get("port", 8787)),
         notifications=bool(data.get("notifications", True)),
+        plan=_plan(data.get("plan", {})),
     )

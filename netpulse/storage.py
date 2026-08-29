@@ -351,14 +351,26 @@ class Store:
         expected = max(1, int((until - since).total_seconds() / interval_s))
         return Coverage(sampled=raw + rolled, expected=expected)
 
-    def values(self, source: str, metric: str, since: datetime, until: datetime) -> list[float]:
-        """Raw values in order, for percentile work. Raw only, on purpose: a rollup keeps
-        min/mean/max, and pretending percentiles out of those would be invention."""
+    def values(
+        self, source: str, metric: str, since: datetime, until: datetime | None = None
+    ) -> list[float]:
+        """Raw values in order over [since, until), or to the latest when until is None.
+
+        Raw only, on purpose: a rollup keeps min/mean/max, and pretending percentiles
+        out of those would be invention. The window is half-open like every other range
+        here so adjacent windows compose without double-counting — which is why `until`
+        can be omitted: an odometer wants its newest position included, and asking for
+        "up to now" would drop a reading taken this very instant.
+        """
+        clause = "AND at < ?" if until is not None else ""
+        parameters: tuple[object, ...] = (source, metric, _ts(since))
+        if until is not None:
+            parameters += (_ts(until),)
         with self._lock:
             rows = self._conn.execute(
                 "SELECT value FROM samples WHERE source = ? AND metric = ? "
-                "AND at >= ? AND at < ? ORDER BY at",
-                (source, metric, _ts(since), _ts(until)),
+                f"AND at >= ? {clause} ORDER BY at",
+                parameters,
             ).fetchall()
         return [row["value"] for row in rows]
 
