@@ -48,6 +48,7 @@ the zero-setup story. A config adds router adapters:
 from __future__ import annotations
 
 import tomllib
+from contextlib import suppress
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -107,7 +108,40 @@ def save_sources(sources: list[SourceConfig], path: Path | None = None) -> Path:
                 lines.append(f"{key} = {value}")
         lines.append("")
     location.write_text("\n".join(lines))
+    _protect(location)
     return location
+
+
+def _protect(location: Path) -> None:
+    """Owner-only, like every other file that holds a password.
+
+    A router password in a world-readable file is a router password every account on
+    the machine has. Set on write rather than documented, because a permission nobody
+    applies is a permission nobody has.
+    """
+    with suppress(OSError):  # a filesystem without modes is not a reason to fail
+        location.chmod(0o600)
+
+
+def warn_if_exposed(location: Path | None = None) -> str:
+    """A message if the config is readable beyond its owner and holds a secret.
+
+    Checked on every start rather than only on write: the file can be created by hand,
+    copied from a backup, or restored with someone else's umask.
+    """
+    path = location or DEFAULT_CONFIG
+    try:
+        mode = path.stat().st_mode
+    except OSError:
+        return ""
+    if not mode & 0o077:
+        return ""
+    if "password" not in path.read_text(errors="replace"):
+        return ""  # nothing secret in it, so the mode does not matter
+    return (
+        f"{path} holds a router password and is readable by other accounts on this "
+        f"machine (mode {mode & 0o777:o}). Run: chmod 600 {path}"
+    )
 
 
 def load(path: Path | None = None) -> Config:

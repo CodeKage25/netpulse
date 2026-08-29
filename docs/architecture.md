@@ -179,19 +179,38 @@ to install, nothing to sign, nothing to update separately from the Python packag
 also why the dashboard is responsive down to a phone: a network monitor is most needed
 on the device in your hand while the connection is misbehaving.
 
-### One response, three files
+### One response, ten files
 
-    web/dashboard.html   the shell — structure only, with {{app.css}} / {{app.js}} slots
-    web/app.css          the design system
-    web/app.js           charts, data, interaction
+    web/assets/
+      index.html         the shell — structure only, with {{styles}} / {{scripts}} slots
+      css/app.css        the design system
+      core/format.js     units, and the one place a design token is read
+      core/store.js      shared state, and which source owns which metric
+      core/metrics.js    the spec table driving tiles, charts and detail views
+      core/chart.js      the SVG primitives
+      views/*.js         one file per thing the user can look at
+      app.js             wiring: events, routing, the poll loop
 
-The server stitches them into a single self-contained document at startup and caches it.
+The server concatenates them in **dependency order** — they share a scope once joined,
+so a module must come after everything it calls at load time — and caches the result.
+Each keeps a banner naming it, so a browser stack trace still points at a file somebody
+can open.
+
+`tests/test_web.py` holds the boundaries: `core` may not call a view or render one, only
+`app.js` binds events, no module may pass 400 lines, and the bundle is syntax-checked
+**joined as well as separately**, because a `const` declared twice across two files only
+fails once they meet.
 The page must still arrive whole, with every asset inline — no CDN, no fonts to fetch,
 no second request — because it has to render during the outage it is explaining, and a
 page that fetches from the network to describe the network goes blank exactly when it is
-needed. But that guarantee is about what ships, not about what anyone has to edit, and a
-test asserts both: no external `src`/`href` survives, and no `{{placeholder}}` does
-either.
+needed. That guarantee is about what ships, not about what anyone has to edit.
+
+**Why not a framework.** React or Vue would mean either a build step, which breaks
+`pip install netpulse && netpulse run`, or a CDN fetch, which breaks the page precisely
+when the network is down. Vendoring Preact would avoid both and is the reasonable next
+move if the UI doubles again — but it puts someone else's rendering model in a project
+whose whole identity is having no dependencies. Vanilla with real module boundaries
+carries a long way, and the boundaries are what was actually missing.
 
 ### What the dashboard does with sources
 

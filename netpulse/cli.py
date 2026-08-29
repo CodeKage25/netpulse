@@ -11,7 +11,7 @@ from netpulse.alerting.alerts import AlertEngine
 from netpulse.alerting.channels import Channels
 from netpulse.alerting.notify import Notifier
 from netpulse.analysis.insights import diagnose
-from netpulse.config import Config, SourceConfig, load, save_sources
+from netpulse.config import Config, SourceConfig, load, save_sources, warn_if_exposed
 from netpulse.core.clock import utcnow
 from netpulse.core.storage import Store
 from netpulse.monitor import Collector
@@ -55,6 +55,9 @@ def run(args: argparse.Namespace) -> int:
     def persist(source: SourceConfig) -> None:
         existing = [SourceConfig(s.name, s.kind, dict(s.options)) for s in config.sources]
         save_sources([source, *existing])
+
+    if warning := warn_if_exposed(Path(args.config) if args.config else None):
+        print(f"warning: {warning}", file=sys.stderr)
 
     api.persist_sources = persist
     api.plan = config.plan

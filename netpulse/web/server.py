@@ -29,7 +29,22 @@ __all__ = ["Api", "make_handler", "serve"]
 #: during the outage it is explaining, and a page that fetches to describe the network
 #: goes blank exactly when it is needed — but nobody should have to maintain a
 #: thousand-line file to get that.
-ASSETS = ("app.css", "app.js")
+#:
+#: Order is dependency order, not preference: these become one script with a shared
+#: scope, so a module must appear after everything it calls at load time. `app.js`
+#: wires everything and therefore goes last.
+STYLES = ("css/app.css",)
+SCRIPTS = (
+    "core/format.js",
+    "core/store.js",
+    "core/metrics.js",
+    "core/chart.js",
+    "views/dashboard.js",
+    "views/detail.js",
+    "views/speedtests.js",
+    "views/path.js",
+    "app.js",
+)
 
 
 @lru_cache(maxsize=1)
@@ -39,10 +54,18 @@ def _dashboard_html() -> bytes:
     Cached rather than re-read: the page is static, and a dashboard being refreshed
     every fifteen seconds should not touch the disk to say the same thing again.
     """
-    web = resources.files("netpulse.web")
-    page = (web / "dashboard.html").read_text()
-    for asset in ASSETS:
-        page = page.replace("{{" + asset + "}}", (web / asset).read_text())
+    assets = resources.files("netpulse.web") / "assets"
+    page = (assets / "index.html").read_text()
+
+    def bundle(names: tuple[str, ...]) -> str:
+        # Each file keeps a banner comment naming it, so a stack trace in the browser
+        # still points at a file somebody can open.
+        return "\n".join(
+            f"/* ---- {name} ---- */\n" + (assets / name).read_text() for name in names
+        )
+
+    page = page.replace("{{styles}}", bundle(STYLES))
+    page = page.replace("{{scripts}}", bundle(SCRIPTS))
     return page.encode()
 
 
