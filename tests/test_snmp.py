@@ -9,9 +9,8 @@ from __future__ import annotations
 
 import pytest
 
-from netpulse.adapters import AdapterError
-from netpulse.adapters.snmp_router import SnmpAdapter
-from netpulse.snmp import (
+from netpulse.sources import AdapterError
+from netpulse.sources.snmp import (
     COUNTER64,
     GAUGE32,
     INTEGER,
@@ -25,6 +24,7 @@ from netpulse.snmp import (
     encode_int,
     encode_oid,
 )
+from netpulse.sources.snmp_router import SnmpAdapter
 
 # ------------------------------------------------------------------ BER
 
@@ -82,7 +82,7 @@ def test_the_exception_tags_decode_to_absent_not_zero() -> None:
 
 def reply_for(request: bytes, values: dict[str, tuple[int, bytes]]) -> bytes:
     """Build a Response PDU echoing the request's id — what a real agent does."""
-    from netpulse.snmp import RESPONSE, SEQUENCE, _tlv
+    from netpulse.sources.snmp import RESPONSE, SEQUENCE, _tlv
 
     _, body, _ = _read_tlv(request, 0)
     _, _, at = _read_tlv(body, 0)
@@ -163,7 +163,7 @@ class FakeAgent:
 
 
 def wire(monkeypatch: pytest.MonkeyPatch, agent: FakeAgent) -> None:
-    import netpulse.adapters.snmp_router as module
+    import netpulse.sources.snmp_router as module
 
     monkeypatch.setattr(module, "get", agent.get)
     monkeypatch.setattr(module, "walk", agent.walk)
@@ -243,7 +243,7 @@ def test_the_vendor_is_detected_once_not_on_every_poll(
     nothing after the first answer."""
     calls = []
     agent = FakeAgent(MIKROTIK_AGENT)
-    import netpulse.adapters.snmp_router as module
+    import netpulse.sources.snmp_router as module
 
     monkeypatch.setattr(module, "get", agent.get)
     monkeypatch.setattr(module, "walk", agent.walk)

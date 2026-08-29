@@ -20,8 +20,8 @@ from collections.abc import Callable
 from contextlib import suppress
 from statistics import pstdev
 
-from netpulse.adapters import AdapterError
-from netpulse.model import Reading
+from netpulse.core.model import Reading
+from netpulse.sources import AdapterError
 
 #: Anycast targets answered close to everyone, including African POPs.
 INTERNET_TARGETS = (("1.1.1.1", 443), ("8.8.8.8", 443))

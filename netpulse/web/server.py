@@ -19,7 +19,7 @@ from importlib import resources
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
-from netpulse.api import Api
+from netpulse.web.api import Api
 
 __all__ = ["Api", "make_handler", "serve"]
 
@@ -39,7 +39,7 @@ def _dashboard_html() -> bytes:
     Cached rather than re-read: the page is static, and a dashboard being refreshed
     every fifteen seconds should not touch the disk to say the same thing again.
     """
-    web = resources.files("netpulse") / "web"
+    web = resources.files("netpulse.web")
     page = (web / "dashboard.html").read_text()
     for asset in ASSETS:
         page = page.replace("{{" + asset + "}}", (web / asset).read_text())

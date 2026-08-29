@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from datetime import timedelta
 
-from netpulse.model import Agg, EventKind, Severity
-from netpulse.storage import Store
+from netpulse.core.model import Agg, EventKind, Severity
+from netpulse.core.storage import Store
 from tests.conftest import Clock
 
 

@@ -18,9 +18,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from netpulse.adapters import AdapterError
-from netpulse.model import Reading
-from netpulse.snmp import SnmpError, get, identify, walk
+from netpulse.core.model import Reading
+from netpulse.sources import AdapterError
+from netpulse.sources.snmp import SnmpError, get, identify, walk
 
 #: sysUpTime and sysDescr, which every agent answers.
 SYS_DESCR = "1.3.6.1.2.1.1.1.0"

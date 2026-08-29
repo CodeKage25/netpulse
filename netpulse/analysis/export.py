@@ -22,8 +22,8 @@ import json
 from datetime import datetime
 from typing import Any
 
-from netpulse.model import agg_for
-from netpulse.storage import Store
+from netpulse.core.model import agg_for
+from netpulse.core.storage import Store
 
 #: Prometheus names cannot carry dots, and the convention is a unit suffix.
 PROM_NAMES = {

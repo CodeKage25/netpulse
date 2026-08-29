@@ -6,10 +6,10 @@ import json
 import re
 from pathlib import Path
 
+from netpulse.analysis.quality import assess
 from netpulse.config import SourceConfig, load, save_sources
-from netpulse.discover import discover
-from netpulse.quality import assess
-from netpulse.storage import Store
+from netpulse.core.storage import Store
+from netpulse.sources.discover import discover
 from tests.conftest import Clock
 
 HUAWEI_TOKENS = b"<response><SesInfo>SessionID=x</SesInfo><TokInfo>t</TokInfo></response>"
@@ -143,7 +143,7 @@ def test_an_unidentified_router_page_is_reported_not_hidden() -> None:
 def test_zte_adapter_falls_back_to_reqproc() -> None:
     import json as jsonlib
 
-    from netpulse.adapters.zte import ZteAdapter
+    from netpulse.sources.zte import ZteAdapter
 
     payload = jsonlib.dumps(
         {"ppp_status": "ppp_connected", "lte_rsrp": "-98", "network_type": "LTE"}
@@ -172,7 +172,7 @@ def test_zte_adapter_falls_back_to_reqproc() -> None:
 def test_every_vendor_probe_is_read_only() -> None:
     """A scan must never be the reason a fragile CPE box reboots. Nothing in the
     registry may ask a router to change, restart, or forget anything."""
-    from netpulse.vendors import VENDORS
+    from netpulse.sources.vendors import VENDORS
 
     forbidden = (
         "reboot",
@@ -202,7 +202,7 @@ def test_every_vendor_probe_is_read_only() -> None:
 def test_no_vendor_probe_carries_a_credential() -> None:
     """Fingerprinting happens before any login, and must stay that way — a scanner that
     needed a password would have to be told one for every address it tries."""
-    from netpulse.vendors import VENDORS
+    from netpulse.sources.vendors import VENDORS
 
     for vendor in VENDORS:
         for signature in vendor.signatures:
@@ -215,7 +215,7 @@ def test_no_vendor_probe_carries_a_credential() -> None:
 def test_a_matcher_refuses_a_payload_from_another_family() -> None:
     """Cross-matching would make discovery confidently wrong, which is worse than
     silent: it sends someone to configure an adapter that can never work."""
-    from netpulse.vendors import VENDORS
+    from netpulse.sources.vendors import VENDORS
 
     payloads = {
         "Huawei": HUAWEI_TOKENS,
@@ -235,7 +235,7 @@ def test_a_matcher_refuses_a_payload_from_another_family() -> None:
 def test_the_gateway_is_always_tried_first() -> None:
     """Whatever the vendor defaults say, the box actually routing this machine's
     traffic is the likeliest router on the network."""
-    from netpulse.vendors import candidate_addresses
+    from netpulse.sources.vendors import candidate_addresses
 
     assert candidate_addresses("10.20.30.1")[0] == "10.20.30.1"
     assert "192.168.8.1" in candidate_addresses("10.20.30.1")

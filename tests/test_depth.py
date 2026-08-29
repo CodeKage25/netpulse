@@ -8,14 +8,14 @@ from __future__ import annotations
 
 from datetime import timedelta
 
-from netpulse.adapters import AdapterError
-from netpulse.adapters.fake import ScriptedAdapter
-from netpulse.adapters.huawei import HuaweiAdapter
-from netpulse.model import DeviceSeen, Reading
+from netpulse.alerting.notify import Notifier
+from netpulse.analysis.speedtest import run_speedtest
+from netpulse.core.model import DeviceSeen, Reading
+from netpulse.core.storage import RAW_RETENTION, Store
 from netpulse.monitor import Collector
-from netpulse.notify import Notifier
-from netpulse.speedtest import run_speedtest
-from netpulse.storage import RAW_RETENTION, Store
+from netpulse.sources import AdapterError
+from netpulse.sources.fake import ScriptedAdapter
+from netpulse.sources.huawei import HuaweiAdapter
 from tests.conftest import Clock
 
 # ------------------------------------------------------------------ rollup ladder

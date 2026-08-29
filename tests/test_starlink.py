@@ -6,8 +6,8 @@ import struct
 
 import pytest
 
-from netpulse.adapters import AdapterError
-from netpulse.adapters.starlink import GET_STATUS, StarlinkAdapter, _frames, fields
+from netpulse.sources import AdapterError
+from netpulse.sources.starlink import GET_STATUS, StarlinkAdapter, _frames, fields
 
 
 def frame(payload: bytes, trailer: str = "grpc-status:0\r\n") -> bytes:

@@ -10,9 +10,9 @@ import json
 
 import pytest
 
-from netpulse.adapters import AdapterError
-from netpulse.adapters.zlt import COUNTER_WRAP, ZltAdapter
-from netpulse.discover import discover
+from netpulse.sources import AdapterError
+from netpulse.sources.discover import discover
+from netpulse.sources.zlt import COUNTER_WRAP, ZltAdapter
 
 # cmd 133 — WAN state and the cumulative byte counters. Trimmed to the fields read.
 WAN = {

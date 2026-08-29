@@ -18,19 +18,19 @@ from contextlib import suppress
 from datetime import datetime, timedelta
 from typing import Any
 
-from netpulse.adapters import build
-from netpulse.allowance import Plan
-from netpulse.allowance import assess as assess_allowance
-from netpulse.clock import Clock, utcnow
+from netpulse.analysis.allowance import Plan
+from netpulse.analysis.allowance import assess as assess_allowance
+from netpulse.analysis.export import prometheus, series, to_csv, to_json, uptime_report
+from netpulse.analysis.insights import diagnose
+from netpulse.analysis.path import analyse, trace
+from netpulse.analysis.quality import assess
+from netpulse.analysis.speedtest import run_speedtest
 from netpulse.config import SourceConfig
-from netpulse.discover import discover
-from netpulse.export import prometheus, series, to_csv, to_json, uptime_report
-from netpulse.insights import diagnose
+from netpulse.core.clock import Clock, utcnow
+from netpulse.core.storage import Store
 from netpulse.monitor import Collector
-from netpulse.path import analyse, trace
-from netpulse.quality import assess
-from netpulse.speedtest import run_speedtest
-from netpulse.storage import Store
+from netpulse.sources import build
+from netpulse.sources.discover import discover
 
 SPARK_POINTS = 30
 

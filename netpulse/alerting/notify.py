@@ -13,7 +13,7 @@ import subprocess
 from collections.abc import Callable
 from datetime import datetime
 
-from netpulse.clock import Clock, utcnow
+from netpulse.core.clock import Clock, utcnow
 
 #: Long enough that a flapping link cannot become a storm, short enough that a genuine
 #: recurrence still reaches someone.

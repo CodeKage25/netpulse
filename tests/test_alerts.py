@@ -5,10 +5,10 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime
 
-from netpulse.alerts import AlertEngine, Rule, evaluate, parse_rules
-from netpulse.channels import Channel, Channels, parse_channels, redact
-from netpulse.model import Severity
-from netpulse.storage import Store
+from netpulse.alerting.alerts import AlertEngine, Rule, evaluate, parse_rules
+from netpulse.alerting.channels import Channel, Channels, parse_channels, redact
+from netpulse.core.model import Severity
+from netpulse.core.storage import Store
 from tests.conftest import Clock
 
 
@@ -228,10 +228,10 @@ def test_the_dashboard_never_sees_a_webhook_path() -> None:
 
 
 def test_a_firing_rule_becomes_an_event_and_a_notification(store: Store, clock: Clock) -> None:
-    from netpulse.adapters.fake import ScriptedAdapter
-    from netpulse.model import EventKind, Reading
+    from netpulse.alerting.notify import Notifier
+    from netpulse.core.model import EventKind, Reading
     from netpulse.monitor import Collector
-    from netpulse.notify import Notifier
+    from netpulse.sources.fake import ScriptedAdapter
 
     clock.set(datetime(2026, 8, 1, tzinfo=UTC))
     posted: list[tuple[str, bytes, dict[str, str]]] = []

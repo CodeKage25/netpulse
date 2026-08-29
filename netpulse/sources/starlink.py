@@ -28,8 +28,8 @@ import struct
 from collections.abc import Callable
 from http.client import HTTPConnection
 
-from netpulse.adapters import AdapterError
-from netpulse.model import Reading
+from netpulse.core.model import Reading
+from netpulse.sources import AdapterError
 
 DEFAULT_HOST = "192.168.100.1"
 GRPC_WEB_PORT = 9201

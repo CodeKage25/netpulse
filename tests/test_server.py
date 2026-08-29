@@ -7,11 +7,11 @@ import urllib.request
 
 import pytest
 
-from netpulse.adapters.fake import ScriptedAdapter
-from netpulse.model import Reading
+from netpulse.core.model import Reading
+from netpulse.core.storage import Store
 from netpulse.monitor import Collector
-from netpulse.server import Api, serve
-from netpulse.storage import Store
+from netpulse.sources.fake import ScriptedAdapter
+from netpulse.web.server import Api, serve
 from tests.conftest import Clock
 
 READING = Reading(
@@ -131,9 +131,9 @@ def test_a_source_can_be_added_while_running(served: str) -> None:
 
 def test_uptime_is_a_poll_fraction_not_a_bucket_minimum(store: Store, clock: Clock) -> None:
     """One bad minute in an otherwise clean day must read ~96%, not 0%."""
-    from netpulse.adapters.fake import ScriptedAdapter
     from netpulse.monitor import Collector
-    from netpulse.server import Api
+    from netpulse.sources.fake import ScriptedAdapter
+    from netpulse.web.server import Api
 
     for i in range(300):
         store.record("wan", {"up": 0.0 if 100 <= i < 112 else 1.0})
@@ -155,9 +155,9 @@ def test_the_distribution_reports_raw_extremes_not_bucketed_ones(
     """Latency buckets keep the worst value, so the smallest of those maxima is the best
     bad minute, not the best reading. The detail view's Best figure must not inherit it.
     """
-    from netpulse.adapters.fake import ScriptedAdapter
     from netpulse.monitor import Collector
-    from netpulse.server import Api
+    from netpulse.sources.fake import ScriptedAdapter
+    from netpulse.web.server import Api
 
     for value in [150.0] + [200.0] * 60 + [1300.0]:
         store.record("wan", {"latency.internet_ms": value})

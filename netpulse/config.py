@@ -48,9 +48,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from netpulse.alerts import Rule, parse_rules
-from netpulse.allowance import Plan
-from netpulse.channels import Channel, parse_channels
+from netpulse.alerting.alerts import Rule, parse_rules
+from netpulse.alerting.channels import Channel, parse_channels
+from netpulse.analysis.allowance import Plan
 
 DEFAULT_DIR = Path.home() / ".netpulse"
 DEFAULT_CONFIG = DEFAULT_DIR / "netpulse.toml"

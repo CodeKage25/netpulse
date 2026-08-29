@@ -20,8 +20,8 @@ import xml.etree.ElementTree as ET
 from collections.abc import Callable
 from typing import Any
 
-from netpulse.adapters import AdapterError
-from netpulse.model import DeviceSeen, Reading
+from netpulse.core.model import DeviceSeen, Reading
+from netpulse.sources import AdapterError
 
 #: CurrentNetworkType / NetworkTypeEx codes seen in the wild. Unknown codes surface as
 #: "type_<code>" rather than a guess.

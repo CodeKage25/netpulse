@@ -8,8 +8,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from netpulse.clock import Clock, utcnow
-from netpulse.model import (
+from netpulse.core.clock import Clock, utcnow
+from netpulse.core.model import (
     Agg,
     Coverage,
     DeviceSeen,

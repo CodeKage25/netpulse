@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from netpulse.insights import diagnose
-from netpulse.model import EventKind, Severity
-from netpulse.storage import Store
+from netpulse.analysis.insights import diagnose
+from netpulse.core.model import EventKind, Severity
+from netpulse.core.storage import Store
 from tests.conftest import Clock
 
 

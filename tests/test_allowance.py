@@ -6,8 +6,8 @@ from datetime import UTC, date, datetime
 
 import pytest
 
-from netpulse.allowance import assess, crossed, cycle_start, travelled
-from netpulse.storage import Store
+from netpulse.analysis.allowance import assess, crossed, cycle_start, travelled
+from netpulse.core.storage import Store
 from tests.conftest import Clock
 
 GB = 1_000_000_000.0
@@ -223,11 +223,11 @@ def test_no_limit_means_no_thresholds_to_cross() -> None:
 
 def test_crossing_a_threshold_notifies_once_per_level(store: Store, clock: Clock) -> None:
     """The point of the feature is arriving before the bill does — and then shutting up."""
-    from netpulse.adapters.fake import ScriptedAdapter
+    from netpulse.alerting.notify import Notifier
     from netpulse.config import Plan
-    from netpulse.model import Reading
+    from netpulse.core.model import Reading
     from netpulse.monitor import Collector
-    from netpulse.notify import Notifier
+    from netpulse.sources.fake import ScriptedAdapter
 
     sent: list[tuple[str, str]] = []
     notifier = Notifier(deliver=lambda title, body: sent.append((title, body)), clock=clock)
@@ -261,11 +261,11 @@ def test_crossing_a_threshold_notifies_once_per_level(store: Store, clock: Clock
 
 def test_sitting_above_a_threshold_does_not_re_announce_it(store: Store, clock: Clock) -> None:
     """Crossing is news; remaining there is not, and an alert that repeats gets muted."""
-    from netpulse.adapters.fake import ScriptedAdapter
+    from netpulse.alerting.notify import Notifier
     from netpulse.config import Plan
-    from netpulse.model import Reading
+    from netpulse.core.model import Reading
     from netpulse.monitor import Collector
-    from netpulse.notify import Notifier
+    from netpulse.sources.fake import ScriptedAdapter
 
     sent: list[tuple[str, str]] = []
     notifier = Notifier(deliver=lambda title, body: sent.append((title, body)), clock=clock)
@@ -291,10 +291,10 @@ def test_sitting_above_a_threshold_does_not_re_announce_it(store: Store, clock: 
 
 def test_no_plan_configured_means_no_data_alerts(store: Store, clock: Clock) -> None:
     """Nothing was promised, so nothing can be exceeded."""
-    from netpulse.adapters.fake import ScriptedAdapter
-    from netpulse.model import Reading
+    from netpulse.alerting.notify import Notifier
+    from netpulse.core.model import Reading
     from netpulse.monitor import Collector
-    from netpulse.notify import Notifier
+    from netpulse.sources.fake import ScriptedAdapter
 
     sent: list[tuple[str, str]] = []
     notifier = Notifier(deliver=lambda title, body: sent.append((title, body)), clock=clock)

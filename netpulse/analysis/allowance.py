@@ -18,7 +18,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 
-from netpulse.storage import Store
+from netpulse.core.storage import Store
 
 #: Where the odometer is read from, in preference order. Firmware differs on whether it
 #: reports a single total or a download/upload pair.

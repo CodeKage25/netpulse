@@ -15,7 +15,7 @@ import urllib.error
 import urllib.request
 import zlib
 
-from netpulse.vendors import VENDORS, Signature
+from netpulse.sources.vendors import VENDORS, Signature
 
 #: Tried after the registry, for firmware nobody has mapped yet. Read-only, all of them.
 EXPLORATORY: tuple[tuple[str, Signature], ...] = (

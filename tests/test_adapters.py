@@ -6,11 +6,11 @@ import json
 
 import pytest
 
-from netpulse.adapters import AdapterError, build
-from netpulse.adapters.fake import DemoAdapter
-from netpulse.adapters.huawei import HuaweiAdapter
-from netpulse.adapters.probe import ProbeAdapter
-from netpulse.adapters.zte import ZteAdapter
+from netpulse.sources import AdapterError, build
+from netpulse.sources.fake import DemoAdapter
+from netpulse.sources.huawei import HuaweiAdapter
+from netpulse.sources.probe import ProbeAdapter
+from netpulse.sources.zte import ZteAdapter
 
 # ------------------------------------------------------------------ huawei fixtures
 

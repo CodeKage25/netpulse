@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from netpulse.path import Hop, analyse, is_internal, parse, trace
+from netpulse.analysis.path import Hop, analyse, is_internal, parse, trace
 
 # Real traceroute output from an MTN Nigeria 5G link, trimmed.
 MTN_OUTPUT = """traceroute to 1.1.1.1 (1.1.1.1), 16 hops max, 60 byte packets
@@ -189,7 +189,7 @@ def test_extra_local_hops_can_be_declared() -> None:
 
 
 def test_a_missing_traceroute_binary_returns_nothing_rather_than_guessing() -> None:
-    import netpulse.path as path_module
+    import netpulse.analysis.path as path_module
 
     original = path_module.shutil.which
     path_module.shutil.which = lambda name: None  # type: ignore[assignment]

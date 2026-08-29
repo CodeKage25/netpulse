@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from statistics import pstdev
 
-from netpulse.storage import Store
+from netpulse.core.storage import Store
 
 WINDOW = timedelta(hours=1)
 

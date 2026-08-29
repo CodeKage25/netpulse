@@ -7,16 +7,16 @@ from datetime import timedelta
 from pathlib import Path
 
 from netpulse import __version__
-from netpulse.adapters import Adapter, build
-from netpulse.alerts import AlertEngine
-from netpulse.channels import Channels
-from netpulse.clock import utcnow
+from netpulse.alerting.alerts import AlertEngine
+from netpulse.alerting.channels import Channels
+from netpulse.alerting.notify import Notifier
+from netpulse.analysis.insights import diagnose
 from netpulse.config import Config, SourceConfig, load, save_sources
-from netpulse.insights import diagnose
+from netpulse.core.clock import utcnow
+from netpulse.core.storage import Store
 from netpulse.monitor import Collector
-from netpulse.notify import Notifier
-from netpulse.server import Api, serve
-from netpulse.storage import Store
+from netpulse.sources import Adapter, build
+from netpulse.web.server import Api, serve
 
 
 def _config(args: argparse.Namespace) -> Config:
@@ -67,8 +67,8 @@ def run(args: argparse.Namespace) -> int:
     if configless:
         # First run: go find the router while the probe is already recording.
         def autodiscover() -> None:
-            from netpulse.adapters import build as build_adapter
-            from netpulse.discover import discover
+            from netpulse.sources import build as build_adapter
+            from netpulse.sources.discover import discover
 
             for item in discover():
                 print(f"found {item.label} at {item.url} — now watching it", flush=True)
@@ -158,7 +158,7 @@ def diagnose_cmd(args: argparse.Namespace) -> int:
 
 
 def discover_cmd(args: argparse.Namespace) -> int:
-    from netpulse.discover import discover
+    from netpulse.sources.discover import discover
 
     print("scanning the gateway and well-known router addresses…", flush=True)
     found = discover()
@@ -184,7 +184,7 @@ def discover_cmd(args: argparse.Namespace) -> int:
 
 
 def path_cmd(args: argparse.Namespace) -> int:
-    from netpulse.path import analyse, trace
+    from netpulse.analysis.path import analyse, trace
 
     print(f"tracing the path to {args.target}…", flush=True)
     hops = trace(args.target)
@@ -197,13 +197,13 @@ def path_cmd(args: argparse.Namespace) -> int:
 
 
 def probe_router_cmd(args: argparse.Namespace) -> int:
-    from netpulse.probe_router import probe_router
+    from netpulse.sources.probe_router import probe_router
 
     return probe_router(args.url)
 
 
 def speedtest_cmd(args: argparse.Namespace) -> int:
-    from netpulse.speedtest import COST_NOTE, run_speedtest
+    from netpulse.analysis.speedtest import COST_NOTE, run_speedtest
 
     if not args.yes:
         answer = input(f"A speed test {COST_NOTE}. Continue? [y/N] ")

@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from netpulse.adapters import AdapterError
-from netpulse.adapters.fake import ScriptedAdapter
-from netpulse.model import Reading
+from netpulse.core.model import Reading
+from netpulse.core.storage import Store
 from netpulse.monitor import Collector
-from netpulse.storage import Store
+from netpulse.sources import AdapterError
+from netpulse.sources.fake import ScriptedAdapter
 from tests.conftest import Clock
 
 OK = Reading(metrics={"latency.internet_ms": 50.0, "up": 1.0})

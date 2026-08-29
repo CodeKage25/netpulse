@@ -10,8 +10,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from datetime import datetime, timedelta
 
-from netpulse.model import Agg, Insight, Severity
-from netpulse.storage import Store
+from netpulse.core.model import Agg, Insight, Severity
+from netpulse.core.storage import Store
 
 
 def _typical(

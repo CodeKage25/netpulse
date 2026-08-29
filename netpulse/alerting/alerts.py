@@ -22,8 +22,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
-from netpulse.model import Severity
-from netpulse.storage import Store
+from netpulse.core.model import Severity
+from netpulse.core.storage import Store
 
 #: A rule whose metric was recorded for less of its window than this is not judged.
 #: Half is generous on purpose: the cost of a missed alert is higher than the cost of

@@ -17,8 +17,8 @@ import urllib.request
 from collections.abc import Callable
 from typing import Any
 
-from netpulse.adapters import AdapterError
-from netpulse.model import Reading
+from netpulse.core.model import Reading
+from netpulse.sources import AdapterError
 
 #: The firmware gives no rate field (netWanRxRate is empty here), so throughput is
 #: differenced from the cumulative counters. Counters are already near 2^32 on a

@@ -12,7 +12,7 @@ import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from netpulse.storage import Store
+from netpulse.core.storage import Store
 
 DOWNLOAD_URL = "https://speed.cloudflare.com/__down?bytes={size}"
 UPLOAD_URL = "https://speed.cloudflare.com/__up"

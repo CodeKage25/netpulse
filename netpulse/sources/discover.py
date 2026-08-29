@@ -13,8 +13,8 @@ from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
-from netpulse.adapters.probe import default_gateway
-from netpulse.vendors import VENDORS, Vendor, candidate_addresses
+from netpulse.sources.probe import default_gateway
+from netpulse.sources.vendors import VENDORS, Vendor, candidate_addresses
 
 TIMEOUT_S = 2.0
 MAX_PARALLEL_HOSTS = 8

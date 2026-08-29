@@ -10,8 +10,8 @@ from __future__ import annotations
 import math
 import random
 
-from netpulse.adapters import AdapterError
-from netpulse.model import Reading
+from netpulse.core.model import Reading
+from netpulse.sources import AdapterError
 
 
 class DemoAdapter:

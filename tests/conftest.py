@@ -4,7 +4,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from netpulse.storage import Store
+from netpulse.core.storage import Store
 
 
 class Clock:

@@ -6,15 +6,15 @@ from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import datetime
 
-from netpulse.adapters import Adapter
-from netpulse.alerts import AlertEngine
-from netpulse.allowance import Plan, crossed, format_bytes
-from netpulse.allowance import assess as assess_allowance
-from netpulse.channels import Channels
-from netpulse.clock import Clock, utcnow
-from netpulse.model import EventKind, Severity
-from netpulse.notify import Notifier
-from netpulse.storage import Store
+from netpulse.alerting.alerts import AlertEngine
+from netpulse.alerting.channels import Channels
+from netpulse.alerting.notify import Notifier
+from netpulse.analysis.allowance import Plan, crossed, format_bytes
+from netpulse.analysis.allowance import assess as assess_allowance
+from netpulse.core.clock import Clock, utcnow
+from netpulse.core.model import EventKind, Severity
+from netpulse.core.storage import Store
+from netpulse.sources import Adapter
 
 #: Three misses before an outage is declared: one failed poll is a blip, three is real.
 OUTAGE_AFTER = 3

@@ -7,9 +7,9 @@ import io
 import json
 from datetime import timedelta
 
-from netpulse.export import prometheus, series, to_csv, to_json, uptime_report
-from netpulse.model import EventKind, Severity
-from netpulse.storage import Store
+from netpulse.analysis.export import prometheus, series, to_csv, to_json, uptime_report
+from netpulse.core.model import EventKind, Severity
+from netpulse.core.storage import Store
 from tests.conftest import Clock
 
 # ------------------------------------------------------------------ prometheus
@@ -41,7 +41,7 @@ def test_label_values_are_escaped() -> None:
 
 
 def test_every_exported_name_is_a_legal_prometheus_name() -> None:
-    from netpulse.export import PROM_NAMES
+    from netpulse.analysis.export import PROM_NAMES
 
     for metric, (name, kind, help_text) in PROM_NAMES.items():
         assert name.replace("_", "").isalnum(), f"{metric} exports an illegal name"
@@ -174,9 +174,9 @@ def test_nothing_recorded_gives_no_uptime_rather_than_a_perfect_score(
 
 
 def api_for(store: Store, clock: Clock):  # type: ignore[no-untyped-def]
-    from netpulse.adapters.fake import ScriptedAdapter
-    from netpulse.api import Api
     from netpulse.monitor import Collector
+    from netpulse.sources.fake import ScriptedAdapter
+    from netpulse.web.api import Api
 
     return Api(
         store,

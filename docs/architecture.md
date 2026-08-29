@@ -7,23 +7,45 @@ config.
 
 ## The dependency rule
 
-Modules form a DAG with one direction of flow. Nothing lower may import anything higher.
+Modules form a DAG with one direction of flow. Nothing lower may import anything higher,
+and **`tests/test_architecture.py` fails the build when something does** — an
+architecture that lives only in a document is a suggestion, and the person adding a
+router a year from now will not have read this file.
+
+    netpulse/
+      core/       model · clock · storage          layer 0-1
+      sources/    adapters · vendors · discover    layer 1
+      analysis/   quality · insights · allowance · path · export · speedtest
+      alerting/   alerts · channels · notify
+      config.py                                    layer 4
+      monitor.py  the collector                    layer 5
+      web/        api · server · assets            layer 6
+      cli.py                                       layer 7
+
+The test also holds four specific edges that matter more than the general rule: an
+adapter may never reach the store or the collector; `api.py` may never import a
+transport; every package must say what it is for; and `core/clock.py` is the only place
+the system clock is read.
 
 ```
-              cli · server (HTTP transport) · web/ (the page)
+                                 cli
                                   │
-                                 api                  ← the query layer
+                      web/  api → server → the page
                                   │
-             ┌────────────────────┼────────────────────┐
-         monitor               analysis            discover
-        (collector)      quality · insights            │
-             │           allowance · alerts        vendors   ← registry (data)
-             │           export · path · quality
-             │           speedtest · notify · channels
-             └────────────────────┼────────────────────┐
-                               storage              adapters  ← one per router family
-                                  │                     │
-                                clock ─────────────── model   ← types, aggregation
+                              monitor.py                ← the collector
+                                  │
+                               config.py
+                                  │
+                    ┌─────────────┴─────────────┐
+                alerting/                   analysis/
+          alerts · channels · notify   quality · insights · allowance
+                    │                  path · export · speedtest
+                    └─────────────┬─────────────┘
+                              sources/                  ← one file per router family
+                    adapters · vendors · discover · snmp
+                                  │
+                               core/
+                       storage → clock · model
 ```
 
 Two consequences worth stating because they are the point:
