@@ -71,6 +71,8 @@ class Severity(StrEnum):
 class EventKind(StrEnum):
     OUTAGE = "outage"
     DEGRADED = "degraded"
+    #: A user-defined threshold rule was breached for its full duration.
+    ALERT = "alert"
 
 
 @dataclass(frozen=True, slots=True)

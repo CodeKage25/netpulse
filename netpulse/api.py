@@ -19,6 +19,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from netpulse.adapters import build
+from netpulse.allowance import Plan
 from netpulse.allowance import assess as assess_allowance
 from netpulse.clock import Clock, utcnow
 from netpulse.config import SourceConfig
@@ -50,7 +51,7 @@ class Api:
         #: Called with each added SourceConfig so it survives a restart; None in tests.
         self.persist_sources: Any = None
         #: The configured data plan, if any. Set by the runner; absent in tests.
-        self.plan: Any = None
+        self.plan: Plan | None = None
         self._streams: list[queue.Queue[str]] = []
         self._streams_lock = threading.Lock()
         collector.subscribe(self._publish)
@@ -159,8 +160,8 @@ class Api:
         }
 
     def allowance(self, source: str) -> dict[str, Any]:
-        limit = getattr(self.plan, "limit_bytes", None)
-        reset_day = int(getattr(self.plan, "reset_day", 1) or 1)
+        limit = self.plan.limit_bytes if self.plan else None
+        reset_day = self.plan.reset_day if self.plan else 1
         result = assess_allowance(self.store, source, self._clock(), limit, reset_day)
         if result is None:
             return {"allowance": None}

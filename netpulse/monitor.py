@@ -7,8 +7,10 @@ from dataclasses import dataclass, field
 from datetime import datetime
 
 from netpulse.adapters import Adapter
+from netpulse.alerts import AlertEngine
+from netpulse.allowance import Plan, crossed, format_bytes
 from netpulse.allowance import assess as assess_allowance
-from netpulse.allowance import crossed, format_bytes
+from netpulse.channels import Channels
 from netpulse.clock import Clock, utcnow
 from netpulse.model import EventKind, Severity
 from netpulse.notify import Notifier
@@ -49,13 +51,19 @@ class Collector:
         interval_s: float = 5.0,
         clock: Clock = utcnow,
         notifier: Notifier | None = None,
-        plan: object | None = None,
+        plan: Plan | None = None,
+        alerts: AlertEngine | None = None,
+        channels: Channels | None = None,
     ) -> None:
         self.store = store
         self.interval_s = interval_s
         self._clock = clock
         self._notifier = notifier
         self._plan = plan
+        self._alerts = alerts
+        self._channels = channels
+        #: Open alert event ids, so a clear closes the row its onset opened.
+        self._alert_events: dict[tuple[str, str], int] = {}
         #: Last known allowance fraction per source, so a threshold announces itself
         #: once on the way past rather than every poll while sitting above it.
         self._allowance_seen: dict[str, float] = {}
@@ -168,7 +176,52 @@ class Collector:
                 state.degraded_id = None
         if any(key.startswith("data.month") for key in recorded):
             self._check_allowance(name)
+        self._check_rules(name)
         self._notify(name, recorded)
+
+    def _check_rules(self, name: str) -> None:
+        """Evaluate the user's alert rules and announce the transitions.
+
+        Both directions are recorded as events, so the history answers "was it bad last
+        Tuesday" and not merely "is it bad now". Delivery is best-effort by design: an
+        unreachable webhook must not become an unreachable router.
+        """
+        if self._alerts is None:
+            return
+        started, cleared = self._alerts.check(self.store, name, self._clock())
+        for firing in started:
+            detail = firing.rule.describe(firing.value)
+            self._alert_events[(name, firing.rule.key)] = self.store.open_event(
+                name, EventKind.ALERT, firing.rule.severity, detail, at=self._clock()
+            )
+            self._announce(
+                f"alert:{name}:{firing.rule.key}",
+                f"{name}: {detail}",
+                "",
+                firing.rule.severity.value,
+            )
+        for firing in cleared:
+            minutes = (self._clock() - firing.since).total_seconds() / 60
+            lasted = f" after {max(1, round(minutes))} min"
+            event_id = self._alert_events.pop((name, firing.rule.key), None)
+            if event_id is not None:
+                self.store.close_event(event_id, at=self._clock())
+            # A cleared alert carries its own key: a recovery a second after the onset
+            # is news, and sharing a key would let the onset's throttle swallow it.
+            self._announce(
+                f"alert:{name}:{firing.rule.key}:cleared",
+                f"{name}: recovered{lasted}",
+                firing.rule.describe(firing.value),
+                "info",
+            )
+
+    def _announce(self, key: str, title: str, body: str, severity: str) -> None:
+        """One transition, to the desktop and to every configured channel."""
+        if self._notifier and not self._notifier.send(key, title, body):
+            return  # throttled: a flapping link reports once a minute, not endlessly
+        if self._channels is not None:
+            with suppress(Exception):
+                self._channels.send(title, body or title, severity)
 
     def _check_allowance(self, name: str) -> None:
         """Announce a crossed data threshold once, on the way past.
@@ -177,12 +230,10 @@ class Collector:
         every poll would re-derive the same figure hundreds of times an hour to say
         nothing, and these are the numbers people are billed on.
         """
-        limit = getattr(self._plan, "limit_bytes", None)
-        if not self._notifier or not limit:
+        limit = self._plan.limit_bytes if self._plan else None
+        if not self._notifier or not limit or not self._plan:
             return
-        result = assess_allowance(
-            self.store, name, self._clock(), limit, int(getattr(self._plan, "reset_day", 1))
-        )
+        result = assess_allowance(self.store, name, self._clock(), limit, self._plan.reset_day)
         if result is None:
             return
         fraction = result.fraction

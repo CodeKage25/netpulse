@@ -53,6 +53,20 @@ def _clamp_day(month_start: date, day: int) -> date:
 
 
 @dataclass(frozen=True)
+class Plan:
+    """A data allowance to measure against. Absent means "just tell me what I used"."""
+
+    #: Gigabytes per cycle, as sold. None when the plan is uncapped or unknown.
+    limit_gb: float | None = None
+    #: Day of the month the allowance renews. Carriers rarely use the 1st.
+    reset_day: int = 1
+
+    @property
+    def limit_bytes(self) -> float | None:
+        return self.limit_gb * 1_000_000_000 if self.limit_gb else None
+
+
+@dataclass(frozen=True)
 class Allowance:
     used_bytes: float
     limit_bytes: float | None

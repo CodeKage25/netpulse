@@ -47,6 +47,7 @@ Everything else is built on exactly two interfaces.
 class Adapter(Protocol):
     name: str
     kind: str
+
     def read(self) -> Reading: ...
 ```
 

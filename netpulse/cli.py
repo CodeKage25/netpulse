@@ -8,8 +8,10 @@ from pathlib import Path
 
 from netpulse import __version__
 from netpulse.adapters import Adapter, build
+from netpulse.alerts import AlertEngine
+from netpulse.channels import Channels
 from netpulse.clock import utcnow
-from netpulse.config import Config, SourceConfig, load
+from netpulse.config import Config, SourceConfig, load, save_sources
 from netpulse.insights import diagnose
 from netpulse.monitor import Collector
 from netpulse.notify import Notifier
@@ -43,12 +45,14 @@ def run(args: argparse.Namespace) -> int:
         interval_s=config.interval_s,
         notifier=notifier,
         plan=config.plan,
+        alerts=AlertEngine(list(config.alerts), interval_s=config.interval_s)
+        if config.alerts
+        else None,
+        channels=Channels(list(config.channels)) if config.channels else None,
     )
     api = Api(store, collector, config.interval_s)
 
     def persist(source: SourceConfig) -> None:
-        from netpulse.config import save_sources
-
         existing = [SourceConfig(s.name, s.kind, dict(s.options)) for s in config.sources]
         save_sources([source, *existing])
 
@@ -154,13 +158,12 @@ def diagnose_cmd(args: argparse.Namespace) -> int:
 
 
 def discover_cmd(args: argparse.Namespace) -> int:
-    from netpulse.config import save_sources
     from netpulse.discover import discover
 
     print("scanning the gateway and well-known router addresses…", flush=True)
     found = discover()
     if not found:
-        print("no Huawei or ZTE router answered; the probe still monitors this connection")
+        print("no router answered; the probe still monitors this connection")
         return 1
     sources = [SourceConfig(name="wan", kind="probe")]
     for item in found:

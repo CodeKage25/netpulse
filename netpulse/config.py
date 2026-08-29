@@ -23,6 +23,22 @@ the zero-setup story. A config adds router adapters:
     [plan]
     limit_gb = 100          # what the plan sells; omit if uncapped
     reset_day = 15          # the day the allowance renews, not necessarily the 1st
+
+    [[alert]]
+    metric = "latency.internet_ms"
+    above = 300
+    for_minutes = 2
+    severity = "warning"
+
+    [[alert]]
+    metric = "signal.rsrp_dbm"
+    below = -105
+    for_minutes = 5
+    message = "Signal weak enough to drop the connection"
+
+    [[channel]]
+    kind = "ntfy"           # webhook · slack · discord · ntfy · home_assistant
+    url = "https://ntfy.sh/my-private-topic"
 """
 
 from __future__ import annotations
@@ -31,6 +47,10 @@ import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+from netpulse.alerts import Rule, parse_rules
+from netpulse.allowance import Plan
+from netpulse.channels import Channel, parse_channels
 
 DEFAULT_DIR = Path.home() / ".netpulse"
 DEFAULT_CONFIG = DEFAULT_DIR / "netpulse.toml"
@@ -45,20 +65,6 @@ class SourceConfig:
 
 
 @dataclass(frozen=True)
-class Plan:
-    """A data allowance to measure against. Absent means "just tell me what I used"."""
-
-    #: Gigabytes per cycle, as sold. None when the plan is uncapped or unknown.
-    limit_gb: float | None = None
-    #: Day of the month the allowance renews. Carriers rarely use the 1st.
-    reset_day: int = 1
-
-    @property
-    def limit_bytes(self) -> float | None:
-        return self.limit_gb * 1_000_000_000 if self.limit_gb else None
-
-
-@dataclass(frozen=True)
 class Config:
     sources: tuple[SourceConfig, ...]
     interval_s: float = 5.0
@@ -66,6 +72,8 @@ class Config:
     port: int = 8787
     notifications: bool = True
     plan: Plan = field(default_factory=lambda: Plan())
+    alerts: tuple[Rule, ...] = ()
+    channels: tuple[Channel, ...] = ()
 
 
 def _plan(raw: Any) -> Plan:
@@ -120,4 +128,6 @@ def load(path: Path | None = None) -> Config:
         port=int(data.get("port", 8787)),
         notifications=bool(data.get("notifications", True)),
         plan=_plan(data.get("plan", {})),
+        alerts=tuple(parse_rules(data.get("alert", []))),
+        channels=tuple(parse_channels(data.get("channel", []))),
     )
