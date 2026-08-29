@@ -115,10 +115,18 @@ netpulse diagnose                     rule-based findings (exit 1 on critical)
 
 | Adapter | Boxes | API | Login needed |
 |---|---|---|---|
-| `zlt` | ZLT / Tozed — MTN Nigeria's own-brand 5G (X17U and relatives) | `POST /cgi-bin/http.cgi` | no |
+| `zlt` | ZLT / Tozed — MTN Nigeria's own-brand 5G (X17U, K10, S20, T30…) | `POST /cgi-bin/http.cgi` | no |
 | `huawei` | Huawei CPE — MTN, Glo, 9mobile | XML at `/api/*` | only for SMS |
-| `zte` | ZTE MC-series — Airtel, many MiFis | `/goform/` or `/reqproc/` | no |
+| `zte` | ZTE MC-series — Airtel, MTN HyNetFlex (a rebadged MF286) | `/goform/` or `/reqproc/` | no |
+| `starlink` | every dish — Gen1 round through Gen3, Flat HP, Mini | gRPC-Web on `:9201` | no |
+| `snmp` | MikroTik RouterOS, Teltonika RutOS | SNMPv2c, port 161 | community string |
 | `probe` | anything at all | ICMP/DNS/TCP from this machine | n/a |
+
+Discovery also **names** routers it cannot yet read — Netgear, Nokia FastMile, GL.iNet,
+Teltonika, OpenWrt, MikroTik, TP-Link, Tenda, Cudy, Sagemcom, Technicolor and others —
+so an unsupported box is a message about a missing adapter rather than a silent "no
+router found". Every probe in the registry is unauthenticated, read-only, and carries no
+credential; tests enforce all three.
 
 Your router missing? `netpulse probe-router http://<its address>` prints what its
 firmware actually answers, with anything secret elided, including the script bundles

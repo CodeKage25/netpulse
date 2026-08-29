@@ -102,6 +102,68 @@ def _match_openwrt(payload: bytes) -> str | None:
     return ""
 
 
+def _match_starlink(payload: bytes) -> str | None:
+    """The dish answers gRPC-Web on 9201 with a framed reply. Any well-formed frame is
+    proof enough — decoding the payload is the adapter's job, not the scanner's."""
+    if len(payload) < 5 or payload[0] not in (0x00, 0x80):
+        return None
+    return "dish"
+
+
+def _match_netgear_cellular(payload: bytes) -> str | None:
+    """model.json is served without a login and carries the whole radio. Some firmware
+    answers with the HTML login page under a 200, so the body must actually parse."""
+    data = _obj(payload)
+    if data is None:
+        return None
+    general = data.get("general")
+    if not isinstance(general, dict):
+        return None
+    if "NETGEAR" not in str(general.get("companyName", "")).upper():
+        return None
+    return str(general.get("deviceName") or general.get("model") or "").strip()
+
+
+def _match_netgear_home(payload: bytes) -> str | None:
+    """currentsetting.htm is plain key=value text, unauthenticated on every model."""
+    text = payload.decode("utf-8", errors="replace")
+    if "Firmware=" not in text and "Model=" not in text:
+        return None
+    for line in text.splitlines():
+        if line.startswith("Model="):
+            return line.split("=", 1)[1].strip()
+    return ""
+
+
+def _match_fastmile(payload: bytes) -> str | None:
+    """Nokia's 5G gateway marks this endpoint `security: []` in its own OpenAPI spec."""
+    data = _obj(payload)
+    if data is None:
+        return None
+    if not any(key.startswith("cell_") for key in data):
+        return None
+    return "FastMile"
+
+
+def _match_teltonika_rest(payload: bytes) -> str | None:
+    """`/api/unauthorized/status` is the cleanest zero-credential model fingerprint of
+    any vendor here — it exists precisely to be asked before logging in."""
+    data = _obj(payload)
+    if data is None:
+        return None
+    body = data.get("data") if isinstance(data.get("data"), dict) else data
+    if not isinstance(body, dict) or "deviceModel" not in body:
+        return None
+    return str(body.get("deviceModel") or "").strip()
+
+
+def _match_glinet(payload: bytes) -> str | None:
+    data = _obj(payload)
+    if data is None or "jsonrpc" not in data:
+        return None
+    return "GL.iNet"
+
+
 def _match_mikrotik(payload: bytes) -> str | None:
     """RouterOS answers /rest/ with 401 and a RouterOS-shaped body, or a JSON error."""
     text = payload.decode("utf-8", errors="replace").lower()
@@ -112,6 +174,15 @@ def _match_mikrotik(payload: bytes) -> str | None:
 #: mentioning both a chipset and a brand resolves to the brand.
 WEB_UI_MARKERS: tuple[tuple[str, str], ...] = (
     ("tozed", "ZLT (Tozed)"),
+    ("fastmile", "Nokia FastMile"),
+    ("teltonika", "Teltonika"),
+    ("gl.inet", "GL.iNet"),
+    ("glinet", "GL.iNet"),
+    ("sagemcom", "Sagemcom"),
+    ("technicolor", "Technicolor"),
+    ("inseego", "Inseego"),
+    ("franklin", "Franklin"),
+    ("alcatel", "Alcatel"),
     ("huawei", "Huawei"),
     ("mikrotik", "MikroTik"),
     ("openwrt", "OpenWrt"),
@@ -153,7 +224,49 @@ def _match_web_ui(payload: bytes) -> str | None:
 ZTE_COMMANDS = "network_type,ppp_status,cr_version"
 
 #: Order matters: the most specific probe runs first, and the generic page-sniff last.
+#: Every probe here is unauthenticated by design — fingerprinting happens before anyone
+#: is asked for a password, and several of these families hand over their whole radio
+#: in the same reply that identifies them.
 VENDORS: tuple[Vendor, ...] = (
+    Vendor(
+        name="Starlink",
+        kind="starlink",
+        addresses=("192.168.100.1",),
+        # 9201 is gRPC-Web over HTTP/1.1. Port 9200 speaks HTTP/2 and is unreachable
+        # from the standard library, which is why the dish is asked on this one.
+        signatures=(
+            Signature(
+                ":9201/SpaceX.API.Device.Device/Handle",
+                body=bytes.fromhex("0000000003e23e00"),
+                headers={"Content-Type": "application/grpc-web+proto"},
+            ),
+        ),
+        match=_match_starlink,
+    ),
+    Vendor(
+        name="Netgear",
+        kind="",
+        addresses=("192.168.1.1", "192.168.5.1"),
+        signatures=(Signature("/api/model.json?internalapi=1"),),
+        match=_match_netgear_cellular,
+        note="Netgear's model.json carries the full radio without a login.",
+    ),
+    Vendor(
+        name="Nokia",
+        kind="",
+        addresses=("192.168.1.1", "192.168.0.1"),
+        signatures=(Signature("/overview_get_web_app.cgi"),),
+        match=_match_fastmile,
+        note="FastMile publishes signal on an endpoint its own spec marks unauthenticated.",
+    ),
+    Vendor(
+        name="Teltonika",
+        kind="",
+        addresses=("192.168.1.1",),
+        signatures=(Signature("/api/unauthorized/status"),),
+        match=_match_teltonika_rest,
+        note="RutOS exposes signal over its REST API once you log in.",
+    ),
     Vendor(
         name="Huawei",
         kind="huawei",
@@ -214,6 +327,28 @@ VENDORS: tuple[Vendor, ...] = (
         signatures=(Signature("/rest/system/resource"),),
         match=_match_mikrotik,
         note="RouterOS REST needs credentials; nothing useful answers anonymously.",
+    ),
+    Vendor(
+        name="GL.iNet",
+        kind="",
+        addresses=("192.168.8.1",),
+        signatures=(
+            Signature(
+                "/rpc",
+                body=b'{"jsonrpc":"2.0","id":1,"method":"challenge"}',
+                headers={"Content-Type": "application/json"},
+            ),
+        ),
+        match=_match_glinet,
+        note="GL.iNet reports full modem signal over /rpc after a challenge login.",
+    ),
+    Vendor(
+        name="Netgear",
+        kind="",
+        addresses=("192.168.1.1",),
+        signatures=(Signature("/currentsetting.htm"),),
+        match=_match_netgear_home,
+        note="Netgear home routers answer this without a login, but carry no radio.",
     ),
     Vendor(
         name="",  # filled in from the page itself

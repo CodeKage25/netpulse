@@ -47,8 +47,14 @@ def _try_vendor(base: str, vendor: Vendor, fetch: Fetch) -> Discovered | None:
     model: str | None = None
     for signature in vendor.signatures:
         headers = {key: value.format(base=base) for key, value in signature.headers.items()}
+        # A path beginning with ":" carries its own port — Starlink answers on 9201.
+        target = (
+            base.rsplit(":", 1)[0] + signature.path
+            if signature.path.startswith(":") and base.count(":") > 1
+            else base + signature.path
+        )
         try:
-            payload = fetch(f"{base}{signature.path}", headers, signature.body)
+            payload = fetch(target, headers, signature.body)
         except Exception:
             continue
         found = vendor.match(payload)

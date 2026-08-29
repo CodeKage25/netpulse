@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 from netpulse.config import SourceConfig, load, save_sources
@@ -186,9 +187,16 @@ def test_every_vendor_probe_is_read_only() -> None:
     )
     for vendor in VENDORS:
         for signature in vendor.signatures:
-            target = (signature.path + (signature.body or b"").decode()).lower()
+            # Bodies are not all text — Starlink's probe is a binary gRPC-Web frame.
+            body = (signature.body or b"").decode("utf-8", errors="replace")
+            target = (signature.path + body).lower()
             for word in forbidden:
-                assert word not in target, f"{vendor.name} probe looks like a write: {word}"
+                # Matched at a token start only: "currentsetting.htm" is a read, and a
+                # guard that cannot tell it from "setConfig" gets switched off, which
+                # would cost more than the false positive it was catching.
+                assert not re.search(rf"(?<![a-z]){word}", target), (
+                    f"{vendor.name} probe looks like a write: {word}"
+                )
 
 
 def test_no_vendor_probe_carries_a_credential() -> None:
@@ -198,7 +206,8 @@ def test_no_vendor_probe_carries_a_credential() -> None:
 
     for vendor in VENDORS:
         for signature in vendor.signatures:
-            blob = signature.path + str(signature.headers) + (signature.body or b"").decode()
+            body = (signature.body or b"").decode("utf-8", errors="replace")
+            blob = signature.path + str(signature.headers) + body
             for secret in ("password", "passwd", "Authorization", "token="):
                 assert secret.lower() not in blob.lower(), f"{vendor.name} probe carries a secret"
 
