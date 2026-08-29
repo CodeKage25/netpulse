@@ -135,6 +135,29 @@ function runs(points) {
   return out;
 }
 
+/* An axis reading 9.8 / 4.9 / 0 is a scale nobody can hold in their head. Steps snap to
+   a round number, and the ceiling is a whole multiple of the step, so the top gridline
+   is always the ceiling rather than a stray line short of it. */
+const NICE_STEPS = [1, 1.5, 2, 2.5, 4, 5, 8, 10];
+
+function niceStep(rough) {
+  if (!(rough > 0)) return 1;
+  const magnitude = Math.pow(10, Math.floor(Math.log10(rough)));
+  const scaled = rough / magnitude;
+  return magnitude * (NICE_STEPS.find(step => scaled <= step + 1e-9) ?? 10);
+}
+
+function axis(lo, hi, divisions = 3) {
+  // A floor is honoured (RSRP starts at -120, not 0) but never at the cost of a
+  // readable scale, so the floor is snapped down to a step boundary too.
+  const step = niceStep((hi - lo) / divisions);
+  const base = Math.floor(lo / step) * step;
+  const top = base + step * Math.ceil((hi - base) / step || 1);
+  const ticks = [];
+  for (let value = base; value <= top + step * 1e-6; value += step) ticks.push(value);
+  return { base, top, ticks };
+}
+
 function chart(el, seriesList, opts) {
   const { times, bands = [], format = fmt.axis, tip = fmt.ms, height = 190, floor = null } = opts;
   const W = 1000, H = height, pad = { l: 4, r: 4, t: 12, b: 8 };
@@ -142,8 +165,9 @@ function chart(el, seriesList, opts) {
   const all = seriesList.flatMap(s => s.points).filter(v => v != null);
   const dataHi = all.length ? Math.max(...all) : 1;
   const dataLo = all.length ? Math.min(...all) : 0;
-  const lo = floor != null ? Math.min(floor, dataLo) : (dataLo >= 0 ? 0 : dataLo * 1.08);
-  const top = dataHi + (dataHi - lo) * 0.12 || 1;
+  const rawLo = floor != null ? Math.min(floor, dataLo) : (dataLo >= 0 ? 0 : dataLo * 1.08);
+  const rawHi = dataHi + (dataHi - rawLo) * 0.08 || 1;
+  const { base: lo, top, ticks: yTicks } = axis(rawLo, rawHi);
   const x = i => pad.l + (i / n) * (W - pad.l - pad.r);
   const y = v => pad.t + (1 - (v - lo) / (top - lo)) * (H - pad.t - pad.b);
   const baseline = H - pad.b;
@@ -157,8 +181,8 @@ function chart(el, seriesList, opts) {
     if (seriesList.every(series => series.points[i] == null))
       svg += `<rect x="${x(Math.max(0, i - 0.5)).toFixed(1)}" y="${pad.t}" width="${((W - pad.l - pad.r) / n).toFixed(1)}" height="${H - pad.t - pad.b}" fill="var(--gapfill)"/>`;
   let ylabs = "";
-  for (let g = 0; g <= 3; g++) {
-    const value = lo + ((top - lo) * g) / 3, yy = y(value);
+  for (const value of yTicks) {
+    const yy = y(value);
     svg += `<line x1="${pad.l}" y1="${yy.toFixed(1)}" x2="${W - pad.r}" y2="${yy.toFixed(1)}" stroke="var(--grid)" stroke-width="1"/>`;
     ylabs += `<span class="ylab" style="top:${(yy / H) * 100}%">${format(value)}</span>`;
   }
@@ -495,7 +519,11 @@ async function drawUptime() {
     <div class="up-figures">
       <div><div class="n">${(report.uptime * 100).toFixed(2)}<span style="font-size:13px">%</span></div>
         <div class="l">of recorded polls were up</div></div>
-      <div><div class="n" style="font-size:20px;color:var(--text-2)">${(report.coverage * 100).toFixed(0)}%</div>
+      <div><div class="n" style="font-size:20px;color:var(--text-2)">${
+        // Rounding a real 0.4% to "0%" reads as "nothing was recorded", which is a
+        // different and wrong claim — the figure above it came from somewhere.
+        report.coverage < 0.1 ? (report.coverage * 100).toFixed(1) : (report.coverage * 100).toFixed(0)
+      }%</div>
         <div class="l">of the period recorded</div></div>
     </div>
     <div style="font-size:11.5px;color:var(--text-3);margin-top:9px;line-height:1.6">

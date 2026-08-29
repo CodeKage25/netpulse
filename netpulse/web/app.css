@@ -17,6 +17,9 @@
     --border: #e4e3df; --border-2: #d8d7d2;
     --text: #0b0b0b; --text-2: #52514e; --text-3: #8a8984;
     --down: #2a78d6; --up: #1baf7a; --mono: #3a3a38; --accent: #d95926;
+    /* Darker than their dark-theme counterparts: the bright greens and ambers that
+       read well on near-black fall below usable contrast on paper white. */
+    --good: #0a8a0a; --warning: #a67908; --serious: #c2571f; --critical: #c02828;
     --grid: #ececea; --band: rgba(208,59,59,0.10); --gapfill: rgba(82,81,78,0.05);
     --down-fill: rgba(42,120,214,0.15); --up-fill: rgba(27,175,122,0.15);
     --mono-fill: rgba(58,58,56,0.09); --accent-fill: rgba(217,89,38,0.15);
