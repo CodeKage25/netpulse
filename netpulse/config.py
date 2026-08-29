@@ -7,8 +7,12 @@ the zero-setup story. A config adds router adapters:
 
     [[source]]
     name = "mtn"
-    kind = "huawei"          # any carrier's Huawei box: MTN, Airtel, Glo, 9mobile
-    url = "http://192.168.8.1"
+    kind = "zlt"             # zlt · huawei · zte · starlink · snmp · probe
+    url = "http://192.168.0.1"
+    # A password is optional and unlocks the connected-device list. It is used only to
+    # sign in to this router, is never logged, and never leaves the machine.
+    username = "admin"
+    password = ""
     # username/password unlock SMS reading (where data-balance texts arrive)
 
     [[source]]

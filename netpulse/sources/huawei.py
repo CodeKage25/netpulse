@@ -21,6 +21,7 @@ from collections.abc import Callable
 from typing import Any
 
 from netpulse.core.model import DeviceSeen, Reading
+from netpulse.core.radio import bandwidth_mhz, carriers, spectrum_metrics
 from netpulse.sources import AdapterError
 
 #: CurrentNetworkType / NetworkTypeEx codes seen in the wild. Unknown codes surface as
@@ -84,6 +85,34 @@ def _xml(payload: bytes) -> ET.Element:
         code = root.findtext("code", "?")
         raise AdapterError(f"router API error {code}")
     return root
+
+
+def _spectrum(signal: ET.Element) -> dict[str, float]:
+    """Where this box's carriers sit.
+
+    Huawei reports the anchor's channel as `earfcn` — sometimes bare, sometimes as
+    "DL:1650 UL:19650", so only the leading number is taken. On a 5G box `nrdlbandwidth`
+    arrives as "100MHz" rather than a number, which the shared parser strips.
+    """
+    earfcn = (
+        (signal.findtext("earfcn") or "").split(":")[-1].split()[0]
+        if signal.findtext("earfcn")
+        else ""
+    )
+    stack = carriers(
+        signal.findtext("band") or "",
+        earfcn,
+        bandwidth_mhz(signal.findtext("dlbandwidth") or ""),
+        signal.findtext("pci") or "",
+    )
+    stack += carriers(
+        (signal.findtext("nrband") or "").lstrip("nN"),
+        signal.findtext("nrdlfreq") or signal.findtext("nrarfcn") or "",
+        bandwidth_mhz(signal.findtext("nrdlbandwidth") or ""),
+        signal.findtext("nrpci") or "",
+        leg="nr",
+    )
+    return spectrum_metrics(stack)
 
 
 class HuaweiAdapter:
@@ -198,6 +227,7 @@ class HuaweiAdapter:
         cell = signal.findtext("cell_id")
         if cell:
             texts["signal.cell_id"] = cell
+        metrics.update(_spectrum(signal))
 
         traffic = self._get("/api/monitoring/traffic-statistics")
         for field, metric in (

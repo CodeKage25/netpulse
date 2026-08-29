@@ -12,12 +12,15 @@ routine sweep is one request. The richer RF sweep (205) rides every sixth cycle.
 
 from __future__ import annotations
 
+import hashlib
 import json
+import secrets
 import urllib.request
 from collections.abc import Callable
 from typing import Any
 
-from netpulse.core.model import Reading
+from netpulse.core.model import DeviceSeen, Reading
+from netpulse.core.radio import carriers, spectrum_metrics
 from netpulse.sources import AdapterError
 
 #: The firmware gives no rate field (netWanRxRate is empty here), so throughput is
@@ -52,6 +55,33 @@ def _text(payload: dict[str, Any], key: str) -> str | None:
     return value or None
 
 
+def _spectrum(rf: dict[str, Any]) -> dict[str, float]:
+    """The X17U reports both legs of a 5G non-standalone connection separately."""
+    return spectrum_metrics(
+        carriers(
+            str(rf.get("currentband", "")),
+            str(rf.get("FREQ", "")),
+            str(rf.get("bandwidth", "")),
+            str(rf.get("PCI", "")),
+        )
+        + carriers(
+            str(rf.get("currentband_5g", "")),
+            str(rf.get("FREQ_5G", "")),
+            str(rf.get("bandwidth_5g", "")),
+            str(rf.get("PCI_5G", "")),
+            leg="nr",
+        )
+    )
+
+
+#: Signing in unlocks the connected-device list and the flow counters. It is optional
+#: on purpose — everything the outage detector needs answers without it.
+DEVICE_LIST_EVERY = 6
+#: Three consecutive failures lock the account for three minutes, so a wrong password
+#: must be treated as final rather than retried on the next poll.
+LOGIN_LOCKOUT_S = 180.0
+
+
 class ZltAdapter:
     kind = "zlt"
 
@@ -59,18 +89,82 @@ class ZltAdapter:
         self,
         name: str,
         url: str = "http://192.168.0.1",
+        username: str = "admin",
+        password: str = "",
         *,
         fetch: Fetch = _urllib_fetch,
     ):
         self.name = name
         # A pasted browser URL often carries the SPA route (http://192.168.0.1/#/).
         self.base = url.split("#")[0].rstrip("/")
+        self._username = username
+        self._password = password
+        self._session: str | None = None
+        #: Set once a login is refused, so a wrong password costs one attempt rather
+        #: than one every poll — three in a row locks the account for three minutes.
+        self._login_refused = False
         self._fetch = fetch
         self._cycle = 0
         self._previous: tuple[float, float, float] | None = None  # rx, tx, uptime
 
-    def _command(self, cmd: int) -> dict[str, Any]:
-        body = json.dumps({"cmd": cmd, "method": "GET", "sessionId": ""}).encode()
+    def _login(self) -> str | None:
+        """Sign in, returning a session id, or None if we cannot.
+
+        The password never leaves this method: it is hashed with the router's own
+        challenge token and only the digest is sent. Nothing here is logged, and a
+        refusal is remembered so it is not retried into a lockout.
+        """
+        if not self._password or self._login_refused:
+            return None
+        try:
+            challenge = self._command(232)
+        except AdapterError:
+            return None
+        token = str(challenge.get("token", ""))
+        if not token:
+            return None
+
+        # The client invents its own session id; the router echoes it back.
+        session = secrets.token_hex(32)
+        digest = hashlib.sha256((token + self._password).encode()).hexdigest()
+        body = json.dumps(
+            {
+                "cmd": 100,
+                "method": "POST",
+                "username": self._username,
+                "passwd": digest,
+                "sessionId": session,
+                "isAutoUpgrade": "1",
+                "isCheckPasswd": "1",
+            }
+        ).encode()
+        try:
+            raw = self._fetch(
+                f"{self.base}/cgi-bin/http.cgi",
+                body,
+                {"Content-Type": "application/json;charset=UTF-8"},
+            )
+            answer = json.loads(raw or b"")
+        except (OSError, json.JSONDecodeError):
+            return None
+        if not isinstance(answer, dict) or not answer.get("success"):
+            # Wrong password, or the account is already locked. Either way, stop.
+            self._login_refused = True
+            return None
+        # The router mints its own session id and echoes it back. Sending ours instead
+        # is accepted at login and then refused on every read, which looks exactly like
+        # a permissions problem and is not one.
+        return str(answer.get("sessionId") or session)
+
+    def _command(self, cmd: int, authenticated: bool = False) -> dict[str, Any]:
+        session = ""
+        if authenticated:
+            if self._session is None:
+                self._session = self._login()
+            if self._session is None:
+                raise AdapterError(f"cmd {cmd} needs a login")
+            session = self._session
+        body = json.dumps({"cmd": cmd, "method": "GET", "sessionId": session}).encode()
         try:
             raw = self._fetch(
                 f"{self.base}/cgi-bin/http.cgi",
@@ -86,7 +180,10 @@ class ZltAdapter:
             raise AdapterError("router returned a non-object reply")
         # Errors arrive as HTTP 200 with success:false, so the status line proves nothing.
         if not payload.get("success"):
-            raise AdapterError(f"cmd {cmd} refused: {payload.get('message', 'unknown')}")
+            message = str(payload.get("message", "unknown"))
+            if message == "NO_AUTH" and authenticated:
+                self._session = None  # expired; the next attempt signs in again
+            raise AdapterError(f"cmd {cmd} refused: {message}")
         return payload
 
     def _rates(self, rx: float | None, tx: float | None, uptime: float | None) -> dict[str, float]:
@@ -182,5 +279,37 @@ class ZltAdapter:
                 found = _text(rf, key)
                 if found is not None:
                     texts[name] = found
+            metrics.update(_spectrum(rf))
 
-        return Reading(metrics=metrics, texts=texts)
+        devices: list[DeviceSeen] = []
+        if self._password and self._cycle % DEVICE_LIST_EVERY == 1:
+            devices = self._devices()
+        if devices:
+            metrics["devices.count"] = float(len(devices))
+        return Reading(metrics=metrics, texts=texts, devices=devices)
+
+    def _devices(self) -> list[DeviceSeen]:
+        """Connected clients, when a password unlocks them.
+
+        Failing this must never fail the poll: the device list is garnish, and an
+        expired session is not an outage.
+        """
+        try:
+            payload = self._command(223, authenticated=True)
+        except AdapterError:
+            return []
+        rows = payload.get("dhcp_list_info")
+        if not isinstance(rows, list):
+            return []
+        found: list[DeviceSeen] = []
+        for row in rows:
+            if not isinstance(row, dict) or not row.get("mac"):
+                continue
+            found.append(
+                DeviceSeen(
+                    mac=str(row["mac"]).lower(),
+                    name=str(row.get("hostname") or "").strip(),
+                    ip=str(row.get("ip") or "").strip(),
+                )
+            )
+        return found

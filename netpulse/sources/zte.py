@@ -11,6 +11,7 @@ import urllib.request
 from collections.abc import Callable
 
 from netpulse.core.model import Reading
+from netpulse.core.radio import bandwidth_mhz, carriers, spectrum_metrics
 from netpulse.sources import AdapterError
 
 FIELDS = ",".join(
@@ -31,6 +32,21 @@ FIELDS = ",".join(
         "monthly_tx_bytes",
         "realtime_rx_bytes",
         "realtime_tx_bytes",
+        # Carrier aggregation: the primary cell plus up to four secondaries. Absent
+        # fields simply do not come back, which is why they cost nothing to ask for.
+        "wan_lte_ca",
+        "lte_ca_pcell_band",
+        "lte_ca_pcell_bandwidth",
+        "lte_ca_pcell_arfcn",
+        "lte_pci",
+        "lte_ca_scell_band",
+        "lte_ca_scell_bandwidth",
+        "lte_ca_scell_arfcn",
+        "lte_ca_scell_pci",
+        "nr5g_action_band",
+        "nr5g_action_channel",
+        "nr5g_cell_id",
+        "nr5g_pci",
     ]
 )
 
@@ -53,6 +69,49 @@ def _number(value: object) -> float | None:
 #: ZTE firmware ships two API roots for the same command protocol: MC-series CPE uses
 #: /goform/goform_get_cmd_process, MF-series and many carrier builds use /reqproc/proc_get.
 API_PATHS = ("/goform/goform_get_cmd_process", "/reqproc/proc_get")
+
+
+def _spectrum(data: dict[str, object]) -> dict[str, float]:
+    """ZTE names the primary and secondary cells separately rather than joining them.
+
+    The secondary fields are already "+"-joined when several are active, so the primary
+    is simply prepended to each list and the shared parser handles the rest.
+    """
+
+    def field(*names: str) -> str:
+        for name in names:
+            value = str(data.get(name, "") or "").strip()
+            if value:
+                return value
+        return ""
+
+    primary_band = field("lte_ca_pcell_band", "lte_band")
+    primary_arfcn = field("lte_ca_pcell_arfcn", "lte_earfcn")
+    if not primary_arfcn:
+        return {}
+    secondary_band = field("lte_ca_scell_band")
+    secondary_arfcn = field("lte_ca_scell_arfcn")
+
+    def join(first: str, rest: str) -> str:
+        return "+".join(part for part in (first, rest) if part)
+
+    stack = carriers(
+        join(primary_band, secondary_band),
+        join(primary_arfcn, secondary_arfcn),
+        join(
+            bandwidth_mhz(field("lte_ca_pcell_bandwidth")),
+            bandwidth_mhz(field("lte_ca_scell_bandwidth")),
+        ),
+        join(field("lte_pci"), field("lte_ca_scell_pci")),
+    )
+    stack += carriers(
+        field("nr5g_action_band").lstrip("nN"),
+        field("nr5g_action_channel"),
+        "",
+        field("nr5g_pci"),
+        leg="nr",
+    )
+    return spectrum_metrics(stack)
 
 
 class ZteAdapter:
@@ -112,6 +171,7 @@ class ZteAdapter:
             texts["net.operator"] = str(data["network_provider"])
         if data.get("lte_band"):
             texts["signal.band"] = f"B{data['lte_band']}"
+        metrics.update(_spectrum(data))
         if data.get("cell_id"):
             texts["signal.cell_id"] = str(data["cell_id"])
         return Reading(metrics=metrics, texts=texts)

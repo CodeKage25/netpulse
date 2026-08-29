@@ -49,6 +49,9 @@ AGG_RULES: dict[str, Agg] = {
     "devices.": Agg.LAST,
     "speedtest.": Agg.LAST,
     "router.": Agg.LAST,  # uptime is an odometer; a mean of it means nothing
+    "radio.": Agg.LAST,  # which carrier sits where is a fact, not a level
+    #: …except the total, where a bucket that lost a carrier is the whole point.
+    "radio.aggregate": Agg.MIN,
     "up": Agg.MIN,  # a bucket that saw any failure shows as down
 }
 
