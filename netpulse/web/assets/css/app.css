@@ -53,6 +53,8 @@
   .btn:hover { color: var(--text); border-color: var(--border-2); background: var(--panel-2); }
   .btn:disabled { opacity: .5; cursor: wait; }
   .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn.danger { color: var(--critical); border-color: color-mix(in srgb, var(--critical) 45%, var(--border)); }
+  .btn.danger:hover { background: color-mix(in srgb, var(--critical) 12%, transparent); color: var(--critical); }
   .btn.primary:hover { background: var(--accent); filter: brightness(1.08); color: #fff; }
 
   /* ------------------------------------------------ notice banner */

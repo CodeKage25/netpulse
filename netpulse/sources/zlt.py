@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import secrets
 import urllib.request
 from collections.abc import Callable
@@ -288,6 +289,108 @@ class ZltAdapter:
             metrics["devices.count"] = float(len(devices))
         return Reading(metrics=metrics, texts=texts, devices=devices)
 
+    # ------------------------------------------------------------------ blocking
+    #
+    # Writes, unlike everything else here. Each one is a deliberate act from the UI,
+    # never a poll, and every step is required: the firmware ignores a filter list
+    # until the mode is set, and ignores a mode change until cmd 20 applies it.
+
+    def _write(self, cmd: int, body: dict[str, Any]) -> None:
+        """One POST, with the CSRF token the firmware demands and then rotates."""
+        if self._session is None:
+            self._session = self._login()
+        if self._session is None:
+            raise AdapterError("this router needs a password before it can block anything")
+        payload = {
+            **body,
+            "cmd": cmd,
+            "method": "POST",
+            "success": True,
+            "sessionId": self._session,
+            "token": self._token(),
+        }
+        try:
+            raw = self._fetch(
+                f"{self.base}/cgi-bin/http.cgi",
+                json.dumps(payload).encode(),
+                {"Content-Type": "application/json;charset=UTF-8"},
+            )
+            answer = json.loads(raw or b"")
+        except (OSError, json.JSONDecodeError) as exc:
+            raise AdapterError(f"cmd {cmd} failed: {exc}") from exc
+        # The firmware reports success as an empty message, not as a flag.
+        if isinstance(answer, dict) and str(answer.get("message", "")):
+            raise AdapterError(f"cmd {cmd} refused: {answer['message']}")
+
+    def _token(self) -> str:
+        """A fresh CSRF token. The firmware rotates it after every write, so one is
+        fetched per POST rather than cached — a stale token is refused."""
+        try:
+            return str(self._command(233, authenticated=True).get("token", ""))
+        except AdapterError:
+            return ""
+
+    def _rules(self) -> list[dict[str, Any]]:
+        try:
+            payload = self._command(23, authenticated=True)
+        except AdapterError:
+            return []
+        rows = payload.get("datas")
+        return [row for row in rows if isinstance(row, dict)] if isinstance(rows, list) else []
+
+    def blocked(self) -> list[str]:
+        """Every MAC currently denied, once per address, however many rules cover it."""
+        return sorted(
+            {
+                normalise_mac(str(rule.get("mac", "")))
+                for rule in self._rules()
+                if rule.get("enableRule") and str(rule.get("mac", "")).count(":") == 5
+            }
+        )
+
+    def _ensure_blacklist_mode(self) -> None:
+        """Deny-listed devices, permit everything else.
+
+        Without this the list is inert — and worse, the opposite mode would turn the
+        list into an allow-list and cut off every device that is not on it.
+        """
+        mode = {
+            "datas": [
+                {"enableRule": True, "acceptAll": True, "ippro": family} for family in FAMILIES
+            ]
+        }
+        self._write(28, mode)  # IP filter mode
+        self._write(30, mode)  # MAC filter mode
+
+    def block(self, mac: str, label: str = "") -> None:
+        """Deny one device. The whole list is rewritten — the firmware has no
+        add-one call, so a partial write would drop every other rule."""
+        address = normalise_mac(mac)
+        rules = [rule for rule in self._rules() if str(rule.get("mac", "")).upper() != address]
+        if len({str(r.get("mac", "")).upper() for r in rules}) >= MAX_BLOCKED:
+            raise AdapterError(f"this router holds at most {MAX_BLOCKED} blocked devices")
+        for family in FAMILIES:
+            rules.append(
+                {
+                    "ippro": family,
+                    "mac": address,
+                    "remark": label[:99],
+                    "enableRule": True,
+                    # false is "deny" in blacklist mode; it must match the mode above.
+                    "enableLink": False,
+                }
+            )
+        self._ensure_blacklist_mode()
+        self._write(23, {"datas": rules})
+        self._write(20, {})  # nothing takes effect until this is called
+
+    def unblock(self, mac: str) -> None:
+        """Allow one device again, by rewriting the list without it."""
+        address = normalise_mac(mac)
+        rules = [rule for rule in self._rules() if str(rule.get("mac", "")).upper() != address]
+        self._write(23, {"datas": rules})
+        self._write(20, {})
+
     def _devices(self) -> list[DeviceSeen]:
         """Connected clients, when a password unlocks them.
 
@@ -313,3 +416,25 @@ class ZltAdapter:
                 )
             )
         return found
+
+
+#: The firmware caps its filter list at 32 entries; the UI refuses a 33rd.
+MAX_BLOCKED = 32
+#: A rule is one of these per address family. Both are written so a device is denied
+#: over IPv4 and IPv6 alike — blocking only v4 on a dual-stack network blocks nothing.
+FAMILIES = ("IPV4", "IPV6")
+
+
+def normalise_mac(mac: str) -> str:
+    """Uppercase, colon-separated — the only form the firmware's own validator accepts.
+
+    Multicast and broadcast addresses are refused rather than sent: the router rejects
+    them, and a rule that silently never applies is worse than an error.
+    """
+    digits = re.findall(r"[0-9a-fA-F]{2}", mac)
+    if len(digits) != 6:
+        raise ValueError(f"not a MAC address: {mac!r}")
+    normalised = ":".join(digits).upper()
+    if int(normalised[:2], 16) & 1:
+        raise ValueError(f"{normalised} is a multicast address, not a device")
+    return normalised

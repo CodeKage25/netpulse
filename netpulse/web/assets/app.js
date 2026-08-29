@@ -27,6 +27,8 @@ document.addEventListener("click", event => {
     drawUptime();
     return;
   }
+  const blockButton = event.target.closest("[data-block]");
+  if (blockButton) { toggleBlock(blockButton); return; }
   if (event.target.closest("[data-speedtests]")) { showSpeedtests(); return; }
   const tile = event.target.closest(".tile[data-metric]");
   if (tile) { openDetail(tile.dataset.metric); return; }
@@ -36,6 +38,7 @@ document.addEventListener("keydown", event => { if (event.key === "Escape") clos
 
 document.getElementById("tracepath").addEventListener("click", showPath);
 document.getElementById("spectrum").addEventListener("click", showSpectrum);
+document.getElementById("network").addEventListener("click", showNetwork);
 document.getElementById("alerts").addEventListener("click", () => {
   document.getElementById("events").scrollIntoView({ behavior: "smooth", block: "center" });
 });
@@ -125,7 +128,8 @@ const redraw = () => {
 window.addEventListener("resize", redraw);
 window.addEventListener("orientationchange", redraw);
 
-const OVERLAYS = { spectrum: showSpectrum, path: showPath, speedtests: showSpeedtests };
+const OVERLAYS = { spectrum: showSpectrum, path: showPath, speedtests: showSpeedtests,
+                   network: showNetwork };
 refresh().then(() => {
   const target = location.hash.slice(1);
   if (!target) return;

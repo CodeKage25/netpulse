@@ -45,6 +45,7 @@ SCRIPTS = (
     "views/speedtests.js",
     "views/path.js",
     "views/spectrum.js",
+    "views/network.js",
     "app.js",
 )
 
@@ -141,6 +142,12 @@ def make_handler(api: Api) -> type[BaseHTTPRequestHandler]:
                             int(params.get("slices", "48")),
                         )
                     )
+                elif url.path == "/api/network":
+                    self._json(
+                        api.network(params.get("source", ""), float(params.get("hours", "24")))
+                    )
+                elif url.path == "/api/apps":
+                    self._json(api.apps())
                 elif url.path == "/api/quality":
                     self._json(api.quality(params.get("source", "")))
                 elif url.path == "/api/devices":
@@ -160,7 +167,16 @@ def make_handler(api: Api) -> type[BaseHTTPRequestHandler]:
             url = urlparse(self.path)
             params = {key: values[0] for key, values in parse_qs(url.query).items()}
             try:
-                if url.path == "/api/path":
+                if url.path == "/api/block":
+                    self._json(
+                        api.block(
+                            params.get("source", ""),
+                            params.get("mac", ""),
+                            params.get("on", "1") == "1",
+                            params.get("label", ""),
+                        )
+                    )
+                elif url.path == "/api/path":
                     self._json(api.path(params.get("target", "1.1.1.1")))
                 elif url.path == "/api/discover":
                     self._json(api.discover_routers())

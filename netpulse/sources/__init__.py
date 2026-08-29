@@ -29,6 +29,23 @@ class Adapter(Protocol):
     def read(self) -> Reading: ...
 
 
+@runtime_checkable
+class Blocker(Protocol):
+    """Optionally implemented by an adapter whose router can deny a device.
+
+    Deliberately separate from `Adapter`. Reading is what NetPulse does; writing to
+    somebody's router is a different posture, and keeping it a distinct capability
+    means the collector cannot reach it by accident and the dashboard has to ask
+    whether it exists before offering it.
+    """
+
+    def blocked(self) -> list[str]: ...
+
+    def block(self, mac: str, label: str = "") -> None: ...
+
+    def unblock(self, mac: str) -> None: ...
+
+
 def build(kind: str, name: str, options: dict[str, Any]) -> Adapter:
     if kind == "probe":
         from netpulse.sources.probe import ProbeAdapter

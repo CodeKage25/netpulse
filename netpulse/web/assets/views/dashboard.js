@@ -294,9 +294,12 @@ async function drawEvents() {
 
 async function drawDevices() {
   const data = await json(`/api/devices?source=${encodeURIComponent(state.primary)}&hours=24`);
-  document.getElementById("devices-panel").hidden = data.devices.length === 0;
+  // The panel always shows: it is the way into the devices-and-apps view, and hiding
+  // it when the router lists nothing hides the button that explains why.
   document.getElementById("devcount").textContent = `${data.devices.length} · 24h`;
-  document.getElementById("devices").innerHTML = data.devices.map(d =>
+  document.getElementById("devices").innerHTML = data.devices.length === 0
+    ? `<div class="empty">No devices reported — a router password lists them.</div>`
+    : data.devices.map(d =>
     `<div class="row-item"><span style="font-weight:600">${d.name || "unnamed"}</span>
      <span class="when">${d.ip}</span><span style="flex:1"></span>
      <span class="when">${fmt.when(d.last_seen)}</span></div>`).join("");

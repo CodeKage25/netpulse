@@ -84,6 +84,11 @@ class Collector:
             if (url := getattr(state.adapter, "base", None)) is not None
         }
 
+    def adapter(self, name: str) -> Adapter | None:
+        """The adapter behind a source, so the API can ask what it can do."""
+        state = self._states.get(name)
+        return state.adapter if state else None
+
     def kind_of(self, name: str) -> str:
         return str(getattr(self._states[name].adapter, "kind", ""))
 

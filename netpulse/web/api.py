@@ -12,6 +12,7 @@ it looks like knowledge.
 from __future__ import annotations
 
 import json
+import platform
 import queue
 import threading
 from contextlib import suppress
@@ -20,6 +21,7 @@ from typing import Any
 
 from netpulse.analysis.allowance import Plan
 from netpulse.analysis.allowance import assess as assess_allowance
+from netpulse.analysis.apps import AppMonitor
 from netpulse.analysis.export import prometheus, series, to_csv, to_json, uptime_report
 from netpulse.analysis.insights import diagnose
 from netpulse.analysis.path import analyse, trace
@@ -30,7 +32,7 @@ from netpulse.core.clock import Clock, utcnow
 from netpulse.core.model import Agg
 from netpulse.core.storage import Store
 from netpulse.monitor import Collector
-from netpulse.sources import build
+from netpulse.sources import Blocker, build
 from netpulse.sources.discover import discover
 
 SPARK_POINTS = 30
@@ -55,6 +57,8 @@ class Api:
         self.persist_sources: Any = None
         #: The configured data plan, if any. Set by the runner; absent in tests.
         self.plan: Plan | None = None
+        #: Built on first use — sampling processes costs nothing until someone looks.
+        self._apps: AppMonitor | None = None
         self._streams: list[queue.Queue[str]] = []
         self._streams_lock = threading.Lock()
         collector.subscribe(self._publish)
@@ -331,6 +335,91 @@ class Api:
                 if "signal.sinr_5g_db" in latest
                 else None,
             },
+        }
+
+    def network(self, source: str, hours: float = 24) -> dict[str, Any]:
+        """Devices on the network, and what is knowable about each.
+
+        Per-device byte counters are reported only where the router actually publishes
+        them. The ZLT firmware returns zero for every client — verified under load — so
+        this says "not reported" rather than showing a figure that is always nought.
+        """
+        adapter = self.collector.adapter(source)
+        blocked: list[str] = []
+        can_block = isinstance(adapter, Blocker)
+        if can_block:
+            with suppress(Exception):
+                blocked = adapter.blocked()  # type: ignore[union-attr]
+
+        denied = {mac.upper() for mac in blocked}
+        unseen = set(denied)
+        devices = []
+        for device in self.store.devices(source, self._clock() - timedelta(hours=hours)):
+            mac = str(device["mac"]).upper()
+            unseen.discard(mac)
+            devices.append({**device, "blocked": mac in denied})
+        # A device can be blocked and therefore absent from the lease list; it must
+        # still be listed, or unblocking it becomes impossible from here.
+        devices += [
+            {
+                "mac": mac,
+                "name": "",
+                "ip": "",
+                "first_seen": None,
+                "last_seen": None,
+                "blocked": True,
+            }
+            for mac in sorted(unseen)
+        ]
+        return {
+            "devices": devices,
+            "can_block": can_block,
+            "per_device_bytes": False,
+        }
+
+    def block(self, source: str, mac: str, on: bool, label: str = "") -> dict[str, Any]:
+        """Deny or allow one device. Only ever called from an explicit user action."""
+        adapter = self.collector.adapter(source)
+        if not isinstance(adapter, Blocker):
+            return {"error": "this router cannot block devices"}
+        try:
+            if on:
+                adapter.block(mac, label)
+            else:
+                adapter.unblock(mac)
+        except Exception as exc:
+            return {"error": str(exc)}
+        return {"blocked": on, "mac": mac}
+
+    def apps(self) -> dict[str, Any]:
+        """What is using the connection, on the machine NetPulse runs on.
+
+        The scope is in the answer, not buried in a footnote: a router sees flows, not
+        applications, so this cannot speak for other devices and does not pretend to.
+        """
+        priming = self._apps is None
+        if self._apps is None:
+            self._apps = AppMonitor()
+            # Counters are cumulative, so the first sample is a baseline and nothing
+            # more. Saying "measuring" is honest; an empty list would read as "nothing
+            # is using your connection", which is a different and wrong claim.
+            self._apps.poll()
+        if not self._apps.available:
+            return {"available": False, "apps": [], "host": platform.node()}
+        return {
+            "available": True,
+            "priming": priming,
+            "host": platform.node(),
+            "apps": [
+                {
+                    "name": app.name,
+                    "down_bytes": app.down_bytes,
+                    "up_bytes": app.up_bytes,
+                    "system": app.system,
+                }
+                for app in self._apps.poll()
+                if app.down_bytes is not None
+            ][:24],
         }
 
     def quality(self, source: str) -> dict[str, Any]:
