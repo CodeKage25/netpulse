@@ -59,6 +59,18 @@ class Collector:
     def sources(self) -> list[str]:
         return list(self._states)
 
+    def watched_urls(self) -> set[str]:
+        """The router addresses already being polled, so discovery can say "watching"
+        instead of offering a box the collector is on."""
+        return {
+            url
+            for state in self._states.values()
+            if (url := getattr(state.adapter, "base", None)) is not None
+        }
+
+    def kind_of(self, name: str) -> str:
+        return str(getattr(self._states[name].adapter, "kind", ""))
+
     def add_adapter(self, adapter: Adapter) -> None:
         """Hot-add a source — discovery finding a router must not need a restart."""
         if adapter.name not in self._states:

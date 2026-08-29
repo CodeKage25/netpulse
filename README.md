@@ -120,9 +120,16 @@ netpulse diagnose                     rule-based findings (exit 1 on critical)
 | `probe` | anything at all | ICMP/DNS/TCP from this machine | n/a |
 
 Your router missing? `netpulse probe-router http://<its address>` prints what its
-firmware actually answers, with anything secret elided. That output is what an adapter
-gets built from — the ZLT adapter above was written from exactly that, then tested
-against payloads captured verbatim from a live X17U.
+firmware actually answers, with anything secret elided, including the script bundles
+its own web UI loads — those bundles are the specification. That output is what an
+adapter gets built from: the ZLT adapter above was written from exactly that in about
+an hour, then tested against payloads captured verbatim from a live X17U.
+
+**[docs/adding-a-router.md](docs/adding-a-router.md)** walks the whole path. What
+NetPulse recognises lives in `netpulse/vendors.py` as data — one entry gives you
+auto-discovery, the model name in the UI, and a place in the diagnostic. Discovery also
+reports routers it can name but not yet read, so an unsupported box is a message about
+a missing adapter rather than a silent "no router found".
 
 ## The dashboard
 

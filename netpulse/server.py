@@ -166,10 +166,7 @@ class Api:
     def discover_routers(self) -> dict[str, Any]:
         found = discover()
         # A router already being watched should say so, not offer itself again.
-        existing = {
-            getattr(self.collector._states[name].adapter, "base", None)
-            for name in self.collector.sources
-        }
+        existing = self.collector.watched_urls()
         return {
             "found": [
                 {
