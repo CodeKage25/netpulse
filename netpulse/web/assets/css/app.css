@@ -191,6 +191,19 @@
   .up-figures .l { font-size: 11px; color: var(--text-2); margin-top: 2px; }
   #alert-count { display: none; margin-left: 5px; font-weight: 700; }
   #alert-count.on { display: inline; color: var(--critical); }
+  /* The 3D scene. Sized in the page rather than by the canvas's own attributes, which
+     are set from the element's measured box every draw so it stays sharp on retina. */
+  .scene-wrap { position: relative; margin-top: 12px; border-radius: 12px;
+    background: var(--panel-2); border: 1px solid var(--border); overflow: hidden; }
+  .scene-wrap canvas { display: block; width: 100%; height: 340px; cursor: grab;
+    touch-action: none; }
+  .scene-wrap canvas:active { cursor: grabbing; }
+  .scene-readout { position: absolute; left: 12px; bottom: 10px; font-size: 11.5px;
+    color: var(--text-2); background: color-mix(in srgb, var(--panel) 82%, transparent);
+    border: 1px solid var(--border); border-radius: 8px; padding: 5px 10px;
+    font-variant-numeric: tabular-nums; pointer-events: none; }
+  @media (max-width: 640px) { .scene-wrap canvas { height: 260px; } }
+
   .grade-row { display: flex; align-items: center; gap: 16px; }
   .grade { font-size: 48px; font-weight: 800; line-height: 1; letter-spacing: -.02em; }
   .grade.A { color: var(--good); } .grade.B { color: var(--up); }

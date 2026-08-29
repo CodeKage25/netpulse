@@ -27,6 +27,7 @@ from netpulse.analysis.quality import assess
 from netpulse.analysis.speedtest import run_speedtest
 from netpulse.config import SourceConfig
 from netpulse.core.clock import Clock, utcnow
+from netpulse.core.model import Agg
 from netpulse.core.storage import Store
 from netpulse.monitor import Collector
 from netpulse.sources import build
@@ -261,6 +262,76 @@ class Api:
             if older > 0:
                 trend = round(100 * (newer - older) / older, 1)
         return {"runs": runs, "count": len(runs), "trend_pct": trend}
+
+    def spectrum(self, source: str, minutes: int, slices: int = 48) -> dict[str, Any]:
+        """The carrier stack over time — where the radio actually is.
+
+        Each slice is one bucket; each carrier within it carries its true centre
+        frequency and real bandwidth, so the view plots measurement rather than
+        decoration. A slice nobody recorded comes back empty rather than repeating the
+        one before it, because a spectrum that quietly holds its last shape across a
+        gap is claiming the radio did too.
+        """
+        now = self._clock()
+        since = now - timedelta(minutes=minutes)
+        present = [m for m in self.store.latest(source) if m.startswith("radio.cc")]
+        if not present:
+            return {"slices": [], "carriers": 0, "supported": False}
+
+        indices = sorted({int(m.split(".")[1][2:]) for m in present})
+        fields = ("mhz", "bw_mhz", "band", "pci", "nr")
+        series: dict[str, list[tuple[datetime, float | None]]] = {}
+        times: list[datetime] = []
+        for index in indices:
+            for field in fields:
+                metric = f"radio.cc{index}.{field}"
+                points = self.store.history(source, metric, since, now, slices, Agg.LAST)
+                series[metric] = points
+                if not times:
+                    times = [at for at, _ in points]
+
+        sliced: list[dict[str, Any]] = []
+        for position, at in enumerate(times):
+            carriers = []
+            for index in indices:
+                mhz = series[f"radio.cc{index}.mhz"][position][1]
+                if mhz is None:
+                    continue  # this carrier was not present in this slice
+                width = series[f"radio.cc{index}.bw_mhz"][position][1]
+                band = series[f"radio.cc{index}.band"][position][1]
+                nr = series[f"radio.cc{index}.nr"][position][1]
+                carriers.append(
+                    {
+                        "mhz": mhz,
+                        "bw_mhz": width,
+                        "band": int(band) if band is not None else None,
+                        "pci": None
+                        if series[f"radio.cc{index}.pci"][position][1] is None
+                        else int(series[f"radio.cc{index}.pci"][position][1] or 0),
+                        "nr": bool(nr),
+                    }
+                )
+            sliced.append({"at": at.isoformat(), "carriers": carriers})
+
+        latest = self.store.latest(source)
+        return {
+            "supported": True,
+            "slices": sliced,
+            "carriers": int(latest.get("radio.carriers", (now, 0))[1]),
+            "aggregate_mhz": latest.get("radio.aggregate_mhz", (now, 0))[1]
+            if "radio.aggregate_mhz" in latest
+            else None,
+            "signal": {
+                "lte_rsrp": latest["signal.rsrp_dbm"][1] if "signal.rsrp_dbm" in latest else None,
+                "lte_sinr": latest["signal.sinr_db"][1] if "signal.sinr_db" in latest else None,
+                "nr_rsrp": latest["signal.rsrp_5g_dbm"][1]
+                if "signal.rsrp_5g_dbm" in latest
+                else None,
+                "nr_sinr": latest["signal.sinr_5g_db"][1]
+                if "signal.sinr_5g_db" in latest
+                else None,
+            },
+        }
 
     def quality(self, source: str) -> dict[str, Any]:
         graded = assess(self.store, source, self._clock())

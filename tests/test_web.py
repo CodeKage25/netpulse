@@ -90,16 +90,41 @@ def test_the_shell_holds_no_logic() -> None:
     assert "addEventListener" not in body
 
 
+def top_level_functions(path: Path) -> set[str]:
+    return set(re.findall(r"^(?:async\s+)?function\s+(\w+)", path.read_text(), re.M))
+
+
 def test_core_modules_do_not_reach_into_views() -> None:
     """`core` is the vocabulary every view speaks; a core module calling a view would
-    make the two inseparable, which is the state this split exists to leave."""
-    view_names = [Path(name).stem for name in SCRIPTS if name.startswith("views/")]
-    for path in (ASSETS / "core").glob("*.js"):
+    make the two inseparable, which is the state this split exists to leave.
+
+    Checked by name against what the views actually define, rather than by guessing at
+    prefixes: `core/scene.js` legitimately has a `draw`, because drawing a projection
+    is a primitive and not a view.
+    """
+    defined_by_views: set[str] = set()
+    for name in SCRIPTS:
+        if name.startswith("views/"):
+            defined_by_views |= top_level_functions(ASSETS / name)
+
+    for path in sorted((ASSETS / "core").glob("*.js")):
         text = path.read_text()
-        for view in view_names:
-            assert f"{view}(" not in text, f"core/{path.name} calls the {view} view"
-        for marker in ("draw", "render", "show"):
-            assert f"function {marker}" not in text, f"core/{path.name} renders a view"
+        for view_function in defined_by_views:
+            assert f"{view_function}(" not in text, (
+                f"core/{path.name} calls {view_function}(), which a view defines"
+            )
+
+
+def test_no_two_modules_define_the_same_function() -> None:
+    """They share one scope once concatenated, so a duplicate silently wins rather than
+    erroring — the worst kind of collision, because everything still runs."""
+    seen: dict[str, str] = {}
+    for name in SCRIPTS:
+        for function in top_level_functions(ASSETS / name):
+            assert function not in seen, (
+                f"{function}() is defined in both {seen[function]} and {name}"
+            )
+            seen[function] = name
 
 
 def test_only_the_wiring_file_binds_events() -> None:
@@ -152,3 +177,42 @@ def test_dark_and_light_are_both_fully_defined() -> None:
     missing = {token for token in dark if token not in light}
     # Shadows are deliberately shared; everything that carries colour is not.
     assert not missing - {"--shadow"}, f"light theme is missing {missing}"
+
+
+# ------------------------------------------------------------------ the 3D scene
+
+
+def code_of(path: Path) -> str:
+    """The file with its comments stripped.
+
+    Scanning raw text catches a module's own prose explaining what it does *not* do —
+    scene.js says "WebGL" only to say it needs none, and api.py said "socket" only to
+    say it has none. Twice bitten.
+    """
+    text = re.sub(r"/\*.*?\*/", "", path.read_text(), flags=re.S)
+    return re.sub(r"^\s*//.*$", "", text, flags=re.M)
+
+
+def test_the_scene_needs_no_library() -> None:
+    """A carrier stack is a few dozen boxes. At that size a hand-rolled projection is
+    faster to write and read than a shader, and adds no dependency to a project whose
+    identity is having none."""
+    scene = code_of(ASSETS / "core" / "scene.js")
+    for library in ("three.", "webgl", "import ", "require("):
+        assert library not in scene.lower(), f"scene.js reaches for {library}"
+    assert 'getContext("2d")' in scene
+
+
+def test_the_scene_guards_geometry_behind_the_camera() -> None:
+    """Without it a box that passes the camera plane folds through the origin and draws
+    as a spike across the whole canvas."""
+    assert "depth > 0.05" in code_of(ASSETS / "core" / "scene.js")
+
+
+def test_the_spectrum_view_states_what_is_measured_and_what_is_shared() -> None:
+    """Frequency and width are per carrier and exact; height is the leg's signal,
+    because the router reports one figure for its LTE carriers together. A view that
+    implied five separate measurements would be inventing four of them."""
+    view = (ASSETS / "views" / "spectrum.js").read_text()
+    assert "leg's signal" in view
+    assert "one figure for its LTE" in view

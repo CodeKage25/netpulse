@@ -39,10 +39,12 @@ SCRIPTS = (
     "core/store.js",
     "core/metrics.js",
     "core/chart.js",
+    "core/scene.js",
     "views/dashboard.js",
     "views/detail.js",
     "views/speedtests.js",
     "views/path.js",
+    "views/spectrum.js",
     "app.js",
 )
 
@@ -129,6 +131,14 @@ def make_handler(api: Api) -> type[BaseHTTPRequestHandler]:
                     self._json(
                         api.speedtest_history(
                             params.get("source", ""), float(params.get("days", "30"))
+                        )
+                    )
+                elif url.path == "/api/spectrum":
+                    self._json(
+                        api.spectrum(
+                            params.get("source", ""),
+                            int(params.get("minutes", "60")),
+                            int(params.get("slices", "48")),
                         )
                     )
                 elif url.path == "/api/quality":

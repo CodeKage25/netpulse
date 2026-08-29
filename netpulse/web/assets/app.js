@@ -35,6 +35,7 @@ document.addEventListener("click", event => {
 document.addEventListener("keydown", event => { if (event.key === "Escape") closeOverlays(); });
 
 document.getElementById("tracepath").addEventListener("click", showPath);
+document.getElementById("spectrum").addEventListener("click", showSpectrum);
 document.getElementById("alerts").addEventListener("click", () => {
   document.getElementById("events").scrollIntoView({ behavior: "smooth", block: "center" });
 });
@@ -124,7 +125,13 @@ const redraw = () => {
 window.addEventListener("resize", redraw);
 window.addEventListener("orientationchange", redraw);
 
-refresh().then(() => { if (location.hash) openDetail(location.hash.slice(1)); });
+const OVERLAYS = { spectrum: showSpectrum, path: showPath, speedtests: showSpeedtests };
+refresh().then(() => {
+  const target = location.hash.slice(1);
+  if (!target) return;
+  // #spectrum, #path and #speedtests open their view; anything else is a metric.
+  (OVERLAYS[target] || (() => openDetail(target)))();
+});
 setInterval(refresh, 15000);
 try {
   const stream = new EventSource("/api/stream");
