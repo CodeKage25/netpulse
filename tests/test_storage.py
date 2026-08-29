@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 
 from netpulse.core.model import Agg, EventKind, Severity
 from netpulse.core.storage import Store
@@ -105,3 +105,38 @@ def test_history_survives_reopening_the_file(tmp_path, clock: Clock) -> None:  #
     second = Store(path, clock=clock)
     assert second.latest("wan")["latency.internet_ms"][1] == 42.0
     second.close()
+
+
+def test_usage_is_attributed_and_summed_per_key(store: Store, clock: Clock) -> None:
+    """Intervals, not counters: a restart, a rename or a reboot each corrupt a counter
+    read against its own previous row, and an interval is true on its own."""
+    store.record_usage("wan", "app", [("firefox", 100.0, 20.0), ("ssh", 5.0, 5.0)])
+    clock.advance(minutes=5)
+    store.record_usage("wan", "app", [("firefox", 400.0, 80.0)])
+
+    totals = dict(
+        (key, (down, up))
+        for key, down, up in store.usage_by_key("wan", "app", clock.now - timedelta(hours=1))
+    )
+    assert totals["firefox"] == (500.0, 100.0)
+    assert totals["ssh"] == (5.0, 5.0)
+
+
+def test_usage_rows_with_nothing_in_them_are_not_stored(store: Store, clock: Clock) -> None:
+    """An idle process every five seconds would otherwise fill the database with zeroes."""
+    store.record_usage("wan", "app", [("idle", 0.0, 0.0)])
+    assert store.usage_by_key("wan", "app", clock.now - timedelta(hours=1)) == []
+
+
+def test_usage_groups_by_calendar_day(store: Store, clock: Clock) -> None:
+    clock.set(datetime(2026, 8, 12, 23, 0, tzinfo=UTC))
+    store.record_usage("wan", "app", [("firefox", 100.0, 0.0)])
+    clock.advance(hours=2)  # over midnight
+    store.record_usage("wan", "app", [("firefox", 50.0, 0.0)])
+
+    days = dict(
+        (day, down)
+        for day, down, _ in store.usage_by_day("wan", "app", clock.now - timedelta(days=3))
+    )
+    assert days["2026-08-12"] == 100.0
+    assert days["2026-08-13"] == 50.0

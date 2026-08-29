@@ -206,6 +206,25 @@
     font-variant-numeric: tabular-nums; pointer-events: none; }
   @media (max-width: 640px) { .scene-wrap canvas { height: 260px; } }
 
+  /* Daily usage bars. Laid out in flow rather than SVG so the labels wrap and the
+     whole row reflows on a phone without a redraw. */
+  .days { display: flex; gap: 5px; align-items: flex-end; margin: 10px 0 6px; }
+  .day { flex: 1; min-width: 0; text-align: center; }
+  .day-bar { height: 110px; display: flex; align-items: flex-end; }
+  .day-bar i { display: block; width: 100%; background: var(--down); border-radius: 3px 3px 0 0; }
+  /* A day nobody recorded: full height, hatched, unmistakably not a measurement. */
+  .day-bar u { display: block; width: 100%; height: 100%; border-radius: 3px;
+    background: repeating-linear-gradient(45deg, var(--gapfill), var(--gapfill) 4px,
+      transparent 4px, transparent 8px); }
+  .day-value { font-size: 10.5px; color: var(--text-2); margin-top: 4px;
+    font-variant-numeric: tabular-nums; }
+  .day-label { font-size: 10px; color: var(--text-3); margin-top: 1px; }
+  @media (max-width: 640px) {
+    .day-bar { height: 80px; }
+    .day-value { font-size: 9.5px; }
+    .day-label { display: none; }
+  }
+
   .grade-row { display: flex; align-items: center; gap: 16px; }
   .grade { font-size: 48px; font-weight: 800; line-height: 1; letter-spacing: -.02em; }
   .grade.A { color: var(--good); } .grade.B { color: var(--up); }

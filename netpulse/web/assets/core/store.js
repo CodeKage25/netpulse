@@ -8,9 +8,10 @@
 "use strict";
 const RANGES = [["15m", 15], ["1h", 60], ["6h", 360], ["24h", 1440], ["7d", 10080]];
 const state = {
-  owner: {}, primary: null, minutes: 60, detail: null, detailMinutes: 60, uptimeDays: 7,
+  owner: {}, primary: null, minutes: 60, detail: null, detailMinutes: 60, uptimeDays: 7, usageDays: 14,
 };
 const UPTIME_RANGES = [["24h", 1], ["7d", 7], ["30d", 30]];
+const USAGE_RANGES = [["7 days", 7], ["14 days", 14], ["30 days", 30]];
 
 /* A router and a probe measure different halves of the same connection: the router
    knows signal, bands and data, and cannot see past its own WAN port; the probe knows

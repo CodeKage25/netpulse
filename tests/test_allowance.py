@@ -310,3 +310,71 @@ def test_no_plan_configured_means_no_data_alerts(store: Store, clock: Clock) -> 
     )
     collector.poll_once()
     assert sent == []
+
+
+# ------------------------------------------------------------------ usage by day
+
+
+def test_each_day_reports_what_the_odometer_travelled(store: Store, clock: Clock) -> None:
+    from netpulse.analysis.allowance import by_day
+
+    clock.set(datetime(2026, 8, 10, tzinfo=UTC))
+    for reading in (0.0, 4 * GB):  # day one: 4 GB
+        store.record("mtn", {"data.month_total_bytes": reading})
+        clock.advance(hours=11)
+    clock.set(datetime(2026, 8, 11, tzinfo=UTC))
+    for reading in (4 * GB, 9 * GB):  # day two: 5 GB
+        store.record("mtn", {"data.month_total_bytes": reading})
+        clock.advance(hours=11)
+
+    days = by_day(store, "mtn", datetime(2026, 8, 10, tzinfo=UTC), clock.now)
+    used = {day.isoformat(): value for day, value, _ in days}
+    assert used["2026-08-10"] == pytest.approx(4 * GB)
+    assert used["2026-08-11"] == pytest.approx(5 * GB)
+
+
+def test_a_day_nobody_watched_is_none_not_zero(store: Store, clock: Clock) -> None:
+    """A day NetPulse was not running is not a day of no traffic, and a chart that
+    draws it as a short bar says exactly the wrong thing."""
+    from netpulse.analysis.allowance import by_day
+
+    clock.set(datetime(2026, 8, 12, tzinfo=UTC))
+    store.record("mtn", {"data.month_total_bytes": 1 * GB})
+    days = by_day(store, "mtn", datetime(2026, 8, 10, tzinfo=UTC), clock.now)
+    used = {day.isoformat(): value for day, value, _ in days}
+    assert used["2026-08-10"] is None
+    assert used["2026-08-11"] is None
+    assert used["2026-08-12"] is not None
+
+
+def test_a_partly_watched_day_says_how_much_of_it_was_seen(store: Store, clock: Clock) -> None:
+    from netpulse.analysis.allowance import by_day
+
+    clock.set(datetime(2026, 8, 12, tzinfo=UTC))
+    store.record("mtn", {"data.month_total_bytes": 0.0})
+    clock.advance(hours=6)
+    store.record("mtn", {"data.month_total_bytes": 2 * GB})
+
+    # Six hours watched out of six hours elapsed: the day so far is fully covered,
+    # even though only a quarter of the calendar day has happened.
+    days = by_day(store, "mtn", datetime(2026, 8, 12, tzinfo=UTC), clock.now)
+    coverage = {day.isoformat(): fraction for day, _, fraction in days}
+    assert coverage["2026-08-12"] == pytest.approx(1.0)
+
+    # …and an hour later, with nothing recorded in it, the day is only six-sevenths seen.
+    clock.advance(hours=1)
+    later = by_day(store, "mtn", datetime(2026, 8, 12, tzinfo=UTC), clock.now)
+    assert dict((d.isoformat(), f) for d, _, f in later)["2026-08-12"] == pytest.approx(6 / 7)
+
+
+def test_a_reset_within_a_day_is_still_counted(store: Store, clock: Clock) -> None:
+    """The router zeroing its counter at midnight is not the user's traffic vanishing."""
+    from netpulse.analysis.allowance import by_day
+
+    clock.set(datetime(2026, 8, 12, tzinfo=UTC))
+    for reading in (10 * GB, 12 * GB, 0.0, 3 * GB):
+        store.record("mtn", {"data.month_total_bytes": reading})
+        clock.advance(hours=5)
+
+    days = by_day(store, "mtn", datetime(2026, 8, 12, tzinfo=UTC), clock.now)
+    assert days[0][1] == pytest.approx(5 * GB)  # 2 before the reset, 3 after

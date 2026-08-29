@@ -42,6 +42,10 @@ function renderNetwork(network, apps) {
     // "private address" beats guessing a vendor that would be wrong.
     const octet = parseInt((device.mac || "00").slice(0, 2), 16);
     const privateMac = Number.isFinite(octet) && (octet & 2);
+    const usage = device.down_bytes == null
+      ? `<span class="when">not reported</span>`
+      : `<span class="when" style="color:var(--text)">↓ ${fmt.bytes(device.down_bytes)}
+         · ↑ ${fmt.bytes(device.up_bytes)}${device.measured_here ? " · measured here" : ""}</span>`;
     const action = !network.can_block ? ""
       : `<button class="btn ${device.blocked ? "" : "danger"}"
            data-block="${device.mac}" data-on="${device.blocked ? 0 : 1}"
@@ -50,11 +54,14 @@ function renderNetwork(network, apps) {
     return `<div class="row-item" style="align-items:center">
       <span class="pulse-dot ${device.blocked ? "down" : ""}" style="width:7px;height:7px"></span>
       <div style="min-width:0">
-        <div style="font-weight:600">${label}${device.blocked ? " · blocked" : ""}</div>
-        <div class="when">${device.ip || "no lease"} · ${device.mac}${privateMac ? " · private address" : ""}</div>
+        <div style="font-weight:600">${label}${device.self ? " · this machine" : ""}${
+          device.blocked ? " · blocked" : ""}</div>
+        <div class="when">${device.ip || "no lease"} · ${device.mac}${
+          privateMac ? " · private address" : ""}${
+          device.last_seen ? " · seen " + fmt.when(device.last_seen) : ""}</div>
       </div>
       <span style="flex:1"></span>
-      <span class="when">${device.last_seen ? fmt.when(device.last_seen) : ""}</span>
+      ${usage}
       ${action}
     </div>`;
   }).join("");
@@ -81,13 +88,18 @@ function renderNetwork(network, apps) {
     <div class="sub-p">Seen by the router in the last 24 hours.</div>
     ${rows || `<div class="empty">No devices reported. A router password is needed to list them.</div>`}
 
-    ${network.per_device_bytes ? "" : `<div class="explain" style="margin-top:14px">
-      <h4>Why there is no per-device data usage</h4>
-      <p>This router reports a byte counter for every connected device and leaves it at
-      zero — checked repeatedly while traffic was flowing. Rather than show a figure
-      that is always nought, or split the total between devices as though that were
-      measured, NetPulse says so. Where a router does publish real per-client counters,
-      they will appear here.</p></div>`}
+    ${network.per_device_bytes === "router" ? "" : `<div class="explain" style="margin-top:14px">
+      <h4>Why only one device shows usage</h4>
+      <p>Per-device traffic has to come from whatever sits in the path. This router
+      publishes a byte counter for every client and leaves every one at zero — checked
+      repeatedly under live traffic, and its own web interface never displays the field
+      either. So it is not being withheld; it is not measured.</p>
+      <p style="margin-top:8px">NetPulse can only measure the machine it runs on, and
+      does — that row is real, and the applications below are its breakdown. For the
+      rest, the honest options are a router that reports per-client counters (OpenWrt
+      with nlbwmon, MikroTik, many Huawei models), or running NetPulse on those devices
+      too. Splitting the connection total between devices by presence would produce a
+      number for every row and a fact for none.</p></div>`}
 
     <div class="sub-h">Applications on ${apps ? apps.host : "this machine"}</div>
     <div class="sub-p">Since the last sample, busiest first. This machine only —

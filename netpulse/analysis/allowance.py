@@ -219,6 +219,50 @@ def crossed(previous_fraction: float | None, fraction: float | None) -> float | 
     return max(passed) if passed else None
 
 
+def by_day(
+    store: Store, source: str, since: datetime, until: datetime
+) -> list[tuple[date, float | None, float]]:
+    """How much the whole connection used on each calendar day.
+
+    Derived from the odometer rather than from anything summed: the router's counter is
+    the authoritative figure, so a day's usage is the distance it travelled between
+    that day's first and last reading — with every reset along the way accounted for.
+
+    Each day also carries the fraction of it that was actually recorded, because a day
+    NetPulse watched for two hours is not a day with low usage. `None` for usage means
+    the day was never sampled at all, which is a different claim from zero.
+    """
+    days: list[tuple[date, float | None, float]] = []
+    day = since.date()
+    while day < until.date() + timedelta(days=1):
+        start = datetime.combine(day, datetime.min.time(), tzinfo=since.tzinfo)
+        end = start + timedelta(days=1)
+        readings = _odometer_window(store, source, start, end)
+        if not readings:
+            days.append((day, None, 0.0))
+        else:
+            span = store.samples_span(source, TOTAL_METRIC, start, end) or store.samples_span(
+                source, DOWN_METRIC, start, end
+            )
+            watched = (span[1] - span[0]).total_seconds() / 86400 if span else 0.0
+            # A day still running is measured against the hours it has had, not 24.
+            elapsed = min(1.0, max((min(end, until) - start).total_seconds() / 86400, 1e-9))
+            days.append((day, travelled(readings), min(1.0, watched / elapsed)))
+        day += timedelta(days=1)
+    return days
+
+
+def _odometer_window(store: Store, source: str, since: datetime, until: datetime) -> list[float]:
+    totals = store.values(source, TOTAL_METRIC, since, until)
+    if totals:
+        return totals
+    downs = store.values(source, DOWN_METRIC, since, until)
+    ups = store.values(source, UP_METRIC, since, until)
+    if not downs:
+        return []
+    return [down + (ups[i] if i < len(ups) else 0.0) for i, down in enumerate(downs)]
+
+
 def format_bytes(value: float) -> str:
     """Human units for notification text, where "104857600 bytes" helps nobody."""
     units = ("B", "KB", "MB", "GB", "TB")

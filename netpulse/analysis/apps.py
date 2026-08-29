@@ -162,6 +162,18 @@ class AppMonitor:
             return {}
         return {}
 
+    def totals(self, usage: list[AppUsage]) -> tuple[float, float]:
+        """This machine's traffic over the interval, from the per-process figures.
+
+        Deliberately derived from the same sample rather than read separately, so the
+        total and the breakdown can never disagree — a list that does not add up to its
+        own total is the fastest way to lose someone's trust in both.
+        """
+        return (
+            sum(app.down_bytes or 0.0 for app in usage),
+            sum(app.up_bytes or 0.0 for app in usage),
+        )
+
     def poll(self) -> list[AppUsage]:
         """Usage since the last call, busiest first."""
         current = self._sample()

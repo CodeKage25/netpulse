@@ -59,6 +59,17 @@ CREATE TABLE IF NOT EXISTS devices (
     ip TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS devices_lookup ON devices (source, mac, at);
+CREATE TABLE IF NOT EXISTS usage (
+    at      TEXT NOT NULL,
+    source  TEXT NOT NULL,
+    -- "app" for a process on this machine, "device" for a client the router reports.
+    kind    TEXT NOT NULL,
+    key     TEXT NOT NULL,
+    down    REAL NOT NULL,
+    up      REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS usage_at ON usage (source, kind, at);
+
 CREATE TABLE IF NOT EXISTS events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     source TEXT NOT NULL,
@@ -182,6 +193,68 @@ class Store:
                 "INSERT INTO devices (at, source, mac, name, ip) VALUES (?, ?, ?, ?, ?)",
                 [(moment, source, d.mac, d.name, d.ip) for d in devices],
             )
+
+    def record_usage(
+        self,
+        source: str,
+        kind: str,
+        entries: list[tuple[str, float, float]],
+        at: datetime | None = None,
+    ) -> None:
+        """Traffic attributed to named things, as an interval — not a running total.
+
+        Deltas rather than counters on purpose: a counter would have to be interpreted
+        against the previous row for its process or device, and a restart, a rename or
+        a reboot would each silently corrupt that. An interval is true on its own.
+        """
+        moment = _ts(at or self._clock())
+        rows = [(moment, source, kind, key, down, up) for key, down, up in entries if down or up]
+        if not rows:
+            return
+        with self._tx() as conn:
+            conn.executemany(
+                "INSERT INTO usage (at, source, kind, key, down, up) VALUES (?, ?, ?, ?, ?, ?)",
+                rows,
+            )
+
+    def usage_by_key(
+        self, source: str, kind: str, since: datetime, until: datetime | None = None
+    ) -> list[tuple[str, float, float]]:
+        """Total per app or per device over a window, busiest first."""
+        clause = "AND at < ?" if until is not None else ""
+        parameters: tuple[object, ...] = (source, kind, _ts(since))
+        if until is not None:
+            parameters += (_ts(until),)
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT key, SUM(down) AS down, SUM(up) AS up FROM usage "
+                f"WHERE source = ? AND kind = ? AND at >= ? {clause} "
+                "GROUP BY key ORDER BY (SUM(down) + SUM(up)) DESC",
+                parameters,
+            ).fetchall()
+        return [(row["key"], row["down"], row["up"]) for row in rows]
+
+    def usage_by_day(
+        self, source: str, kind: str, since: datetime, until: datetime | None = None
+    ) -> list[tuple[str, float, float]]:
+        """Total per calendar day, oldest first.
+
+        Grouped on the stored timestamp's date, which is UTC. A day boundary that does
+        not match the viewer's midnight is a real limitation and is stated where the
+        figures are shown, rather than corrected by guessing a timezone.
+        """
+        clause = "AND at < ?" if until is not None else ""
+        parameters: tuple[object, ...] = (source, kind, _ts(since))
+        if until is not None:
+            parameters += (_ts(until),)
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT substr(at, 1, 10) AS day, SUM(down) AS down, SUM(up) AS up "
+                f"FROM usage WHERE source = ? AND kind = ? AND at >= ? {clause} "
+                "GROUP BY day ORDER BY day",
+                parameters,
+            ).fetchall()
+        return [(row["day"], row["down"], row["up"]) for row in rows]
 
     # ------------------------------------------------------------------ compaction
 

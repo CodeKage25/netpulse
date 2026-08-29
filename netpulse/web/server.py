@@ -46,6 +46,7 @@ SCRIPTS = (
     "views/path.js",
     "views/spectrum.js",
     "views/network.js",
+    "views/usage.js",
     "app.js",
 )
 
@@ -146,6 +147,8 @@ def make_handler(api: Api) -> type[BaseHTTPRequestHandler]:
                     self._json(
                         api.network(params.get("source", ""), float(params.get("hours", "24")))
                     )
+                elif url.path == "/api/usage":
+                    self._json(api.usage(params.get("source", ""), int(params.get("days", "14"))))
                 elif url.path == "/api/apps":
                     self._json(api.apps())
                 elif url.path == "/api/quality":

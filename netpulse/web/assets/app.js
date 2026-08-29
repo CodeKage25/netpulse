@@ -19,6 +19,12 @@ document.addEventListener("click", event => {
   }
   const detailRange = event.target.closest("[data-detail-m]");
   if (detailRange) { state.detailMinutes = Number(detailRange.dataset.detailM); renderDetail(); return; }
+  const usageRange = event.target.closest("[data-usage-days]");
+  if (usageRange) {
+    state.usageDays = Number(usageRange.dataset.usageDays);
+    showUsage();
+    return;
+  }
   const uptimeRange = event.target.closest("[data-days]");
   if (uptimeRange) {
     state.uptimeDays = Number(uptimeRange.dataset.days);
@@ -39,6 +45,7 @@ document.addEventListener("keydown", event => { if (event.key === "Escape") clos
 document.getElementById("tracepath").addEventListener("click", showPath);
 document.getElementById("spectrum").addEventListener("click", showSpectrum);
 document.getElementById("network").addEventListener("click", showNetwork);
+document.getElementById("usage").addEventListener("click", showUsage);
 document.getElementById("alerts").addEventListener("click", () => {
   document.getElementById("events").scrollIntoView({ behavior: "smooth", block: "center" });
 });
@@ -129,7 +136,7 @@ window.addEventListener("resize", redraw);
 window.addEventListener("orientationchange", redraw);
 
 const OVERLAYS = { spectrum: showSpectrum, path: showPath, speedtests: showSpeedtests,
-                   network: showNetwork };
+                   network: showNetwork, usage: showUsage };
 refresh().then(() => {
   const target = location.hash.slice(1);
   if (!target) return;

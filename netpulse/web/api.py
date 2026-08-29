@@ -21,6 +21,7 @@ from typing import Any
 
 from netpulse.analysis.allowance import Plan
 from netpulse.analysis.allowance import assess as assess_allowance
+from netpulse.analysis.allowance import by_day as usage_by_day
 from netpulse.analysis.apps import AppMonitor
 from netpulse.analysis.export import prometheus, series, to_csv, to_json, uptime_report
 from netpulse.analysis.insights import diagnose
@@ -29,6 +30,7 @@ from netpulse.analysis.quality import assess
 from netpulse.analysis.speedtest import run_speedtest
 from netpulse.config import SourceConfig
 from netpulse.core.clock import Clock, utcnow
+from netpulse.core.host import local_macs
 from netpulse.core.model import Agg
 from netpulse.core.storage import Store
 from netpulse.monitor import Collector
@@ -353,11 +355,32 @@ class Api:
 
         denied = {mac.upper() for mac in blocked}
         unseen = set(denied)
+        mine = local_macs()
+        # This machine is the one device NetPulse can measure completely, because it is
+        # running on it. Everything else depends on what the router chooses to publish.
+        measured = self._host_usage()
+
         devices = []
         for device in self.store.devices(source, self._clock() - timedelta(hours=hours)):
             mac = str(device["mac"]).upper()
             unseen.discard(mac)
-            devices.append({**device, "blocked": mac in denied})
+            is_self = mac in mine
+            devices.append(
+                {
+                    **device,
+                    "blocked": mac in denied,
+                    "self": is_self,
+                    # Router-reported counters win where they exist; otherwise this
+                    # machine supplies its own, and nothing is invented for the rest.
+                    "down_bytes": device.get("rx_bytes")
+                    if device.get("rx_bytes") is not None
+                    else (measured[0] if is_self else None),
+                    "up_bytes": device.get("tx_bytes")
+                    if device.get("tx_bytes") is not None
+                    else (measured[1] if is_self else None),
+                    "measured_here": is_self and device.get("rx_bytes") is None,
+                }
+            )
         # A device can be blocked and therefore absent from the lease list; it must
         # still be listed, or unblocking it becomes impossible from here.
         devices += [
@@ -371,11 +394,29 @@ class Api:
             }
             for mac in sorted(unseen)
         ]
+        from_router = any(
+            d.get("down_bytes") is not None and not d["measured_here"] for d in devices
+        )
         return {
             "devices": devices,
             "can_block": can_block,
-            "per_device_bytes": False,
+            # Three distinct states, because "we have no numbers" and "the router has
+            # no numbers" send someone to different places.
+            "per_device_bytes": "router"
+            if from_router
+            else ("self" if any(d["measured_here"] for d in devices) else "none"),
         }
+
+    def _host_usage(self) -> tuple[float | None, float | None]:
+        """This machine's traffic since the last sample, or (None, None) if unknown."""
+        if self._apps is None:
+            self._apps = AppMonitor()
+            self._apps.poll()  # a baseline; the next call carries the delta
+            return (None, None)
+        if not self._apps.available:
+            return (None, None)
+        usage = self._apps.poll()
+        return self._apps.totals(usage) if usage else (None, None)
 
     def block(self, source: str, mac: str, on: bool, label: str = "") -> dict[str, Any]:
         """Deny or allow one device. Only ever called from an explicit user action."""
@@ -420,6 +461,41 @@ class Api:
                 for app in self._apps.poll()
                 if app.down_bytes is not None
             ][:24],
+        }
+
+    def usage(self, source: str, days: int = 14) -> dict[str, Any]:
+        """Data usage broken down by day, by application and by device.
+
+        Three answers to three different questions, kept apart because they are
+        measured by different things and will not sum to each other.
+        """
+        now = self._clock()
+        since = now - timedelta(days=days - 1)
+        start_of_day = since.replace(hour=0, minute=0, second=0, microsecond=0)
+
+        daily = [
+            {
+                "day": day.isoformat(),
+                "bytes": used,
+                "coverage": round(coverage, 3),
+            }
+            for day, used, coverage in usage_by_day(self.store, source, start_of_day, now)
+        ]
+        return {
+            "days": daily,
+            "apps": [
+                {"key": key, "down": down, "up": up}
+                for key, down, up in self.store.usage_by_key(source, "app", start_of_day)[:20]
+            ],
+            "devices": [
+                {"key": key, "down": down, "up": up}
+                for key, down, up in self.store.usage_by_key(source, "device", start_of_day)[:20]
+            ],
+            "apps_by_day": [
+                {"day": day, "down": down, "up": up}
+                for day, down, up in self.store.usage_by_day(source, "app", start_of_day)
+            ],
+            "host": platform.node(),
         }
 
     def quality(self, source: str) -> dict[str, Any]:

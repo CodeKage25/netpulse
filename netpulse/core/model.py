@@ -7,11 +7,19 @@ from enum import StrEnum
 
 @dataclass(frozen=True, slots=True)
 class DeviceSeen:
-    """One client the router reports on its network."""
+    """One client the router reports on its network.
+
+    The byte counters are optional and cumulative, because most consumer firmware does
+    not publish them — the ZLT X17U carries the field and leaves it at zero, and its
+    own web UI never renders it. `None` means "not reported", which is a different
+    claim from zero and must stay distinguishable all the way to the screen.
+    """
 
     mac: str
     name: str = ""
     ip: str = ""
+    rx_bytes: float | None = None
+    tx_bytes: float | None = None
 
 
 @dataclass(frozen=True, slots=True)

@@ -11,8 +11,9 @@ from netpulse.alerting.channels import Channels
 from netpulse.alerting.notify import Notifier
 from netpulse.analysis.allowance import Plan, crossed, format_bytes
 from netpulse.analysis.allowance import assess as assess_allowance
+from netpulse.analysis.apps import AppMonitor
 from netpulse.core.clock import Clock, utcnow
-from netpulse.core.model import EventKind, Severity
+from netpulse.core.model import EventKind, Reading, Severity
 from netpulse.core.storage import Store
 from netpulse.sources import Adapter
 
@@ -53,6 +54,7 @@ class Collector:
         notifier: Notifier | None = None,
         plan: Plan | None = None,
         alerts: AlertEngine | None = None,
+        apps: AppMonitor | None = None,
         channels: Channels | None = None,
     ) -> None:
         self.store = store
@@ -64,6 +66,9 @@ class Collector:
         self._channels = channels
         #: Open alert event ids, so a clear closes the row its onset opened.
         self._alert_events: dict[tuple[str, str], int] = {}
+        #: Per-application usage on this machine, recorded so the history can be asked
+        #: what was using the connection last Tuesday rather than only right now.
+        self._apps = apps
         #: Last known allowance fraction per source, so a threshold announces itself
         #: once on the way past rather than every poll while sitting above it.
         self._allowance_seen: dict[str, float] = {}
@@ -113,6 +118,7 @@ class Collector:
                 continue
             if reading.devices is not None:
                 self.store.record_devices(name, reading.devices, at=self._clock())
+            self._record_usage(name, reading)
             self._succeeded(name, state, reading.metrics, reading.texts)
 
     def _maybe_compact(self) -> None:
@@ -227,6 +233,37 @@ class Collector:
         if self._channels is not None:
             with suppress(Exception):
                 self._channels.send(title, body or title, severity)
+
+    def _record_usage(self, name: str, reading: Reading) -> None:
+        """Attribute this interval's traffic to the things that can be named.
+
+        Devices only where the router publishes counters; applications only for the
+        machine NetPulse runs on. Nothing is apportioned — a row exists because
+        something measured it.
+        """
+        devices = [
+            (device.mac, device.rx_bytes or 0.0, device.tx_bytes or 0.0)
+            # `devices` is None when an adapter does not list them at all, which is a
+            # different thing from listing none — and only one of those is iterable.
+            for device in (reading.devices or [])
+            if device.rx_bytes is not None or device.tx_bytes is not None
+        ]
+        if devices:
+            self.store.record_usage(name, "device", devices, at=self._clock())
+
+        if self._apps is None or not self._apps.available:
+            return
+        with suppress(Exception):  # sampling processes must never stall a poll
+            self.store.record_usage(
+                name,
+                "app",
+                [
+                    (app.name, app.down_bytes or 0.0, app.up_bytes or 0.0)
+                    for app in self._apps.poll()
+                    if app.down_bytes is not None
+                ],
+                at=self._clock(),
+            )
 
     def _check_allowance(self, name: str) -> None:
         """Announce a crossed data threshold once, on the way past.
