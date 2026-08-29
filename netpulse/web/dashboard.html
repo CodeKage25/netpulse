@@ -1,0 +1,371 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NetPulse</title>
+<style>
+  /* Every asset is inline: this page must render during the outage it explains. */
+  :root {
+    color-scheme: light;
+    --surface: #fcfcfb; --panel: #ffffff; --border: #e8e7e3;
+    --text: #0b0b0b; --text-2: #52514e; --text-3: #8a8984;
+    --series-1: #2a78d6; --series-2: #eb6834;
+    --good: #0ca30c; --warning: #fab219; --serious: #ec835a; --critical: #d03b3b;
+    --grid: #eeede9; --band: rgba(208,59,59,0.10); --gap: rgba(138,137,132,0.08);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      color-scheme: dark;
+      --surface: #1a1a19; --panel: #222221; --border: #34342f;
+      --text: #ffffff; --text-2: #c3c2b7; --text-3: #8a8984;
+      --series-1: #3987e5; --series-2: #d95926;
+      --grid: #2c2c29; --band: rgba(208,59,59,0.16); --gap: rgba(195,194,183,0.07);
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--surface); color: var(--text);
+    font: 14px/1.45 -apple-system, "Segoe UI", system-ui, sans-serif;
+  }
+  header {
+    display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;
+    padding: 18px 22px 6px;
+  }
+  header h1 { font-size: 17px; margin: 0; letter-spacing: 0.2px; }
+  header .sub { color: var(--text-2); font-size: 13px; }
+  .status-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%;
+    background: var(--good); margin-right: 6px; vertical-align: 1px; }
+  .status-dot.down { background: var(--critical); }
+  main { padding: 8px 22px 40px; max-width: 1180px; margin: 0 auto; }
+  .ranges { display: flex; gap: 6px; margin: 10px 0 16px; }
+  .ranges button {
+    border: 1px solid var(--border); background: var(--panel); color: var(--text-2);
+    padding: 5px 12px; border-radius: 7px; font: inherit; font-size: 12.5px; cursor: pointer;
+  }
+  .ranges button.on { color: var(--text); border-color: var(--text-3); font-weight: 600; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+    gap: 10px; margin-bottom: 16px; }
+  .tile { background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+    padding: 12px 14px 8px; }
+  .tile .label { font-size: 11.5px; color: var(--text-2); text-transform: uppercase;
+    letter-spacing: 0.5px; }
+  .tile .value { font-size: 24px; font-weight: 650; margin: 2px 0 0; font-variant-numeric: tabular-nums; }
+  .tile .unit { font-size: 13px; font-weight: 400; color: var(--text-2); margin-left: 2px; }
+  .tile svg { display: block; width: 100%; height: 26px; margin-top: 4px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 860px) { .grid2 { grid-template-columns: 1fr; } }
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+    padding: 14px 16px; margin-bottom: 14px; }
+  .panel h2 { font-size: 13px; margin: 0 0 4px; color: var(--text-2); font-weight: 600; }
+  .panel .note { font-size: 11.5px; color: var(--text-3); }
+  .legend { display: flex; gap: 14px; font-size: 12px; color: var(--text-2); margin: 4px 0 2px; }
+  .legend .key { display: inline-block; width: 14px; height: 3px; border-radius: 2px;
+    vertical-align: 3px; margin-right: 5px; }
+  .chart-wrap { position: relative; }
+  .chart-wrap svg { display: block; width: 100%; height: 170px; }
+  .tooltip { position: absolute; pointer-events: none; background: var(--panel);
+    border: 1px solid var(--border); border-radius: 7px; padding: 6px 9px; font-size: 12px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.12); display: none; white-space: nowrap; z-index: 5; }
+  .tooltip .t { color: var(--text-3); font-size: 11px; }
+  .insight { display: flex; gap: 10px; padding: 9px 0; border-top: 1px solid var(--border); }
+  .insight:first-of-type { border-top: 0; }
+  .insight .icon { font-size: 15px; line-height: 1.4; }
+  .insight .title { font-weight: 600; font-size: 13px; }
+  .insight .detail { color: var(--text-2); font-size: 12.5px; margin-top: 1px; }
+  .event { display: flex; gap: 10px; align-items: baseline; padding: 6px 0;
+    border-top: 1px solid var(--border); font-size: 12.5px; }
+  .event:first-of-type { border-top: 0; }
+  .event .when { color: var(--text-3); font-variant-numeric: tabular-nums; min-width: 118px; }
+  .badge { font-size: 11px; padding: 1px 8px; border-radius: 9px; font-weight: 600; }
+  .badge.critical { color: var(--critical); border: 1px solid var(--critical); }
+  .badge.warning { color: var(--serious); border: 1px solid var(--serious); }
+  .badge.open { background: var(--critical); color: #fff; border: 0; }
+  .facts { display: flex; gap: 18px; flex-wrap: wrap; font-size: 12.5px; color: var(--text-2); }
+  .facts b { color: var(--text); font-weight: 600; }
+  .empty { color: var(--text-3); font-size: 12.5px; padding: 8px 0; }
+  select { font: inherit; background: var(--panel); color: var(--text);
+    border: 1px solid var(--border); border-radius: 7px; padding: 4px 8px; }
+</style>
+</head>
+<body>
+<header>
+  <h1><span class="status-dot" id="dot"></span>NetPulse</h1>
+  <span class="sub" id="subtitle">connecting…</span>
+  <span style="flex:1"></span>
+  <select id="source"></select>
+</header>
+<main>
+  <div class="ranges" id="ranges"></div>
+  <div class="tiles" id="tiles"></div>
+
+  <div class="panel">
+    <h2>Latency</h2>
+    <div class="legend"><span><span class="key" style="background:var(--series-1)"></span>internet</span></div>
+    <div class="chart-wrap" id="latency"></div>
+    <div class="note" id="latency-note"></div>
+  </div>
+
+  <div class="panel">
+    <h2>Throughput</h2>
+    <div class="legend">
+      <span><span class="key" style="background:var(--series-1)"></span>download</span>
+      <span><span class="key" style="background:var(--series-2)"></span>upload</span>
+    </div>
+    <div class="chart-wrap" id="throughput"></div>
+  </div>
+
+  <div class="grid2" id="signal-panels" hidden>
+    <div class="panel"><h2>Signal strength · RSRP</h2><div class="chart-wrap" id="rsrp"></div></div>
+    <div class="panel"><h2>Signal quality · SINR</h2><div class="chart-wrap" id="sinr"></div></div>
+  </div>
+
+  <div class="grid2">
+    <div class="panel"><h2>Diagnosis</h2><div id="insights"><div class="empty">Gathering evidence…</div></div></div>
+    <div class="panel"><h2>Events</h2><div id="events"><div class="empty">No outages recorded.</div></div></div>
+  </div>
+
+  <div class="panel"><h2>Connection</h2><div class="facts" id="facts"></div></div>
+</main>
+
+<script>
+"use strict";
+const RANGES = [["15m", 15], ["1h", 60], ["6h", 360], ["24h", 1440]];
+let state = { source: null, minutes: 60, overview: null };
+
+const fmt = {
+  ms: v => v == null ? "–" : v >= 1000 ? (v / 1000).toFixed(1) + " s" : Math.round(v) + " ms",
+  mbps: v => v == null ? "–" : ((v * 8) / 1e6).toFixed(v * 8 >= 1e7 ? 0 : 1),
+  bytes: v => {
+    if (v == null) return "–";
+    const units = ["B", "KB", "MB", "GB", "TB"]; let i = 0;
+    while (v >= 1000 && i < units.length - 1) { v /= 1000; i++; }
+    return v.toFixed(v >= 100 ? 0 : 1) + " " + units[i];
+  },
+  when: iso => new Date(iso).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }),
+  clock: iso => new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
+};
+const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+
+/* ---------- charting: SVG line with gap-honest paths, outage bands, crosshair ---------- */
+
+function paths(points, x, y) {
+  // A gap in recording is a break in the line — null never interpolates across.
+  let d = "", drawing = false;
+  for (const [i, v] of points.entries()) {
+    if (v == null) { drawing = false; continue; }
+    d += (drawing ? "L" : "M") + x(i).toFixed(1) + " " + y(v).toFixed(1);
+    drawing = true;
+  }
+  return d;
+}
+
+function lineChart(el, seriesList, opts) {
+  const { times, bands = [], format = fmt.ms, floor = 0 } = opts;
+  const W = 1000, H = 170, pad = { l: 44, r: 8, t: 10, b: 20 };
+  const n = Math.max(1, times.length - 1);
+  const all = seriesList.flatMap(s => s.points).filter(v => v != null);
+  const hi = all.length ? Math.max(...all) : 1;
+  const lo = Math.min(floor, all.length ? Math.min(...all) : 0);
+  const top = hi + (hi - lo) * 0.08 || 1;
+  const x = i => pad.l + (i / n) * (W - pad.l - pad.r);
+  const y = v => pad.t + (1 - (v - lo) / (top - lo)) * (H - pad.t - pad.b);
+
+  let svg = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">`;
+  for (const [a, b] of bands) {
+    svg += `<rect x="${x(a)}" y="${pad.t}" width="${Math.max(2, x(b) - x(a))}" height="${H - pad.t - pad.b}" fill="var(--band)"/>`;
+  }
+  for (const [i, v] of (seriesList[0]?.points || []).entries()) {
+    if (v == null) svg += `<rect x="${x(Math.max(0, i - 0.5))}" y="${pad.t}" width="${(W - pad.l - pad.r) / n}" height="${H - pad.t - pad.b}" fill="var(--gap)"/>`;
+  }
+  for (let g = 0; g <= 3; g++) {
+    const value = lo + ((top - lo) * g) / 3, yy = y(value);
+    svg += `<line x1="${pad.l}" y1="${yy}" x2="${W - pad.r}" y2="${yy}" stroke="var(--grid)" stroke-width="1"/>`
+        + `<text x="${pad.l - 6}" y="${yy + 4}" text-anchor="end" font-size="11" fill="var(--text-3)">${format(value)}</text>`;
+  }
+  for (const s of seriesList) {
+    svg += `<path d="${paths(s.points, x, y)}" fill="none" stroke="${s.color}" stroke-width="2" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`;
+  }
+  svg += `<line id="cross" x1="0" x2="0" y1="${pad.t}" y2="${H - pad.t - pad.b + pad.t}" stroke="var(--text-3)" stroke-width="1" opacity="0"/>`;
+  svg += `</svg><div class="tooltip"></div>`;
+  el.innerHTML = svg;
+
+  const node = el.querySelector("svg"), tip = el.querySelector(".tooltip"), cross = el.querySelector("#cross");
+  node.addEventListener("mousemove", event => {
+    const rect = node.getBoundingClientRect();
+    const fx = (event.clientX - rect.left) / rect.width * W;
+    const i = Math.round(((fx - pad.l) / (W - pad.l - pad.r)) * n);
+    if (i < 0 || i >= times.length) { tip.style.display = "none"; cross.setAttribute("opacity", 0); return; }
+    cross.setAttribute("x1", x(i)); cross.setAttribute("x2", x(i)); cross.setAttribute("opacity", 0.5);
+    const rows = seriesList.map(s => {
+      const v = s.points[i];
+      return `<div><span class="key" style="background:${s.color};display:inline-block;width:10px;height:3px;border-radius:2px;margin-right:5px;vertical-align:2px"></span>${s.name}: <b>${v == null ? "no data" : opts.tipFormat(v)}</b></div>`;
+    }).join("");
+    tip.innerHTML = `<div class="t">${fmt.clock(times[i])}</div>${rows}`;
+    tip.style.display = "block";
+    const px = (x(i) / W) * rect.width;
+    tip.style.left = Math.min(rect.width - tip.offsetWidth - 4, Math.max(4, px + 12)) + "px";
+    tip.style.top = "10px";
+  });
+  node.addEventListener("mouseleave", () => { tip.style.display = "none"; cross.setAttribute("opacity", 0); });
+}
+
+function sparkline(points, color) {
+  const W = 100, H = 26, vals = points.filter(v => v != null);
+  if (!vals.length) return "<svg></svg>";
+  const hi = Math.max(...vals), lo = Math.min(...vals), span = hi - lo || 1;
+  const x = i => (i / Math.max(1, points.length - 1)) * W;
+  const y = v => 2 + (1 - (v - lo) / span) * (H - 4);
+  return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none"><path d="${paths(points, x, y)}" fill="none" stroke="${color}" stroke-width="1.5" vector-effect="non-scaling-stroke"/></svg>`;
+}
+
+/* ---------------------------------- data plumbing ---------------------------------- */
+
+async function json(url) { const r = await fetch(url); if (!r.ok) throw new Error(url); return r.json(); }
+
+function tile(label, value, unit, spark, color) {
+  return `<div class="tile"><div class="label">${label}</div>
+    <div class="value">${value}<span class="unit">${unit}</span></div>
+    ${spark ? sparkline(spark, color) : ""}</div>`;
+}
+
+async function refresh() {
+  const overview = await json("/api/overview");
+  state.overview = overview;
+  const picker = document.getElementById("source");
+  if (picker.options.length !== overview.sources.length) {
+    picker.innerHTML = overview.sources.map(s => `<option value="${s.name}">${s.name} (${s.kind})</option>`).join("");
+  }
+  if (!state.source || !overview.sources.some(s => s.name === state.source)) {
+    state.source = overview.sources[0]?.name;
+  }
+  picker.value = state.source;
+  const src = overview.sources.find(s => s.name === state.source);
+  if (!src) return;
+
+  document.getElementById("dot").className = "status-dot" + (src.up ? "" : " down");
+  const operator = src.texts["net.operator"], type = src.texts["net.type"];
+  document.getElementById("subtitle").textContent =
+    (src.up ? "online" : "OFFLINE") + (operator ? " · " + operator : "") + (type ? " · " + type : "");
+
+  const m = src.latest, spark = src.sparklines;
+  const blue = css("--series-1"), orange = css("--series-2");
+  let tiles = "";
+  if (m["latency.internet_ms"] != null)
+    tiles += tile("Latency", Math.round(m["latency.internet_ms"]), "ms", spark["latency.internet_ms"], blue);
+  if (m["traffic.down_bytes_s"] != null)
+    tiles += tile("Download", fmt.mbps(m["traffic.down_bytes_s"]), "Mbps", spark["traffic.down_bytes_s"], blue);
+  if (m["traffic.up_bytes_s"] != null)
+    tiles += tile("Upload", fmt.mbps(m["traffic.up_bytes_s"]), "Mbps", spark["traffic.up_bytes_s"], orange);
+  if (m["signal.sinr_db"] != null)
+    tiles += tile("SINR", m["signal.sinr_db"].toFixed(0), "dB", spark["signal.sinr_db"], blue);
+  if (m["signal.rsrp_dbm"] != null)
+    tiles += tile("Signal", Math.round(m["signal.rsrp_dbm"]), "dBm", spark["signal.rsrp_dbm"], blue);
+  if (m["loss.pct"] != null)
+    tiles += tile("Loss", m["loss.pct"].toFixed(0), "%", spark["loss.pct"], orange);
+  if (m["data.month_down_bytes"] != null)
+    tiles += tile("Data this month", fmt.bytes(m["data.month_down_bytes"] + (m["data.month_up_bytes"] || 0)), "", null, blue);
+  document.getElementById("tiles").innerHTML = tiles;
+
+  await Promise.all([drawCharts(), drawInsights(), drawEvents()]);
+
+  const facts = [];
+  for (const [key, label] of [["net.operator", "Operator"], ["net.type", "Network"],
+      ["signal.band", "Band"], ["signal.cell_id", "Cell"], ["net.gateway", "Gateway"]]) {
+    if (src.texts[key]) facts.push(`<span>${label} <b>${src.texts[key]}</b></span>`);
+  }
+  facts.push(`<span>Recorded <b>${(src.coverage * 100).toFixed(0)}%</b> of the last hour</span>`);
+  document.getElementById("facts").innerHTML = facts.join("");
+}
+
+async function drawCharts() {
+  const q = (metric, buckets = 90) =>
+    json(`/api/history?source=${encodeURIComponent(state.source)}&metric=${metric}&minutes=${state.minutes}&buckets=${buckets}`);
+  const [latency, down, up, rsrp, sinr, events] = await Promise.all([
+    q("latency.internet_ms"), q("traffic.down_bytes_s"), q("traffic.up_bytes_s"),
+    q("signal.rsrp_dbm"), q("signal.rsrq_db") && q("signal.sinr_db"),
+    json(`/api/events?minutes=${state.minutes}`),
+  ]);
+  const blue = css("--series-1"), orange = css("--series-2");
+  const times = latency.times;
+  const toBand = e => {
+    const a = times.findIndex(t => t >= e.started_at);
+    const b = e.ended_at ? times.findIndex(t => t >= e.ended_at) : times.length - 1;
+    return a >= 0 ? [a, b < 0 ? times.length - 1 : b] : null;
+  };
+  const bands = events.events.filter(e => e.kind === "outage" && e.source === state.source)
+    .map(toBand).filter(Boolean);
+
+  lineChart(document.getElementById("latency"),
+    [{ name: "internet", color: blue, points: latency.points }],
+    { times, bands, format: v => Math.round(v), tipFormat: fmt.ms });
+  document.getElementById("latency-note").textContent =
+    `Buckets show the worst latency in each interval — spikes survive. ` +
+    `Recorded ${(latency.coverage * 100).toFixed(0)}% of this period; shaded gaps were not sampled.`;
+
+  lineChart(document.getElementById("throughput"),
+    [{ name: "download", color: blue, points: down.points },
+     { name: "upload", color: orange, points: up.points }],
+    { times: down.times, format: v => fmt.mbps(v), tipFormat: v => fmt.mbps(v) + " Mbps" });
+
+  const hasSignal = rsrp.points.some(v => v != null);
+  document.getElementById("signal-panels").hidden = !hasSignal;
+  if (hasSignal) {
+    lineChart(document.getElementById("rsrp"),
+      [{ name: "RSRP", color: blue, points: rsrp.points }],
+      { times: rsrp.times, floor: -120, format: v => Math.round(v), tipFormat: v => v.toFixed(1) + " dBm" });
+    lineChart(document.getElementById("sinr"),
+      [{ name: "SINR", color: blue, points: sinr.points }],
+      { times: sinr.times, floor: -5, format: v => Math.round(v), tipFormat: v => v.toFixed(1) + " dB" });
+  }
+}
+
+async function drawInsights() {
+  const data = await json(`/api/insights?source=${encodeURIComponent(state.source)}`);
+  const icons = { critical: "🔴", warning: "🟠", info: "🟢" };
+  document.getElementById("insights").innerHTML = data.insights.length
+    ? data.insights.map(i => `<div class="insight"><div class="icon">${icons[i.severity]}</div>
+        <div><div class="title">${i.title}</div><div class="detail">${i.detail}</div></div></div>`).join("")
+    : `<div class="empty">Nothing to flag — the connection looks healthy.</div>`;
+}
+
+async function drawEvents() {
+  const data = await json("/api/events?minutes=10080");
+  document.getElementById("events").innerHTML = data.events.length
+    ? data.events.slice(0, 12).map(e => {
+        const badge = e.ended_at
+          ? `<span class="badge ${e.severity === "critical" ? "critical" : "warning"}">${e.kind}</span>`
+          : `<span class="badge open">ongoing</span>`;
+        const mins = e.ended_at ? Math.max(1, Math.round((new Date(e.ended_at) - new Date(e.started_at)) / 60000)) : null;
+        return `<div class="event"><span class="when">${fmt.when(e.started_at)}</span>${badge}
+          <span>${e.source}${mins ? ` · ${mins} min` : ""} · ${e.detail}</span></div>`;
+      }).join("")
+    : `<div class="empty">No outages recorded.</div>`;
+}
+
+/* ------------------------------------ wiring ------------------------------------ */
+
+document.getElementById("ranges").innerHTML =
+  RANGES.map(([label, minutes]) =>
+    `<button data-m="${minutes}" class="${minutes === state.minutes ? "on" : ""}">${label}</button>`).join("");
+document.getElementById("ranges").addEventListener("click", event => {
+  const button = event.target.closest("button"); if (!button) return;
+  state.minutes = Number(button.dataset.m);
+  for (const b of button.parentElement.children) b.classList.toggle("on", b === button);
+  drawCharts();
+});
+document.getElementById("source").addEventListener("change", event => {
+  state.source = event.target.value; refresh();
+});
+
+refresh();
+setInterval(refresh, 15000);
+// SSE nudges the tiles between refreshes; the page still works if it never connects.
+try {
+  const stream = new EventSource("/api/stream");
+  let last = 0;
+  stream.onmessage = () => { if (Date.now() - last > 4000) { last = Date.now(); refresh(); } };
+} catch {}
+</script>
+</body>
+</html>
