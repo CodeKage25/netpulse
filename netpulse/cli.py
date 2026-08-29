@@ -156,11 +156,20 @@ def discover_cmd(args: argparse.Namespace) -> int:
         return 1
     sources = [SourceConfig(name="wan", kind="probe")]
     for item in found:
-        print(f"  found {item.label} ({item.kind}) at {item.url}")
-        sources.insert(0, SourceConfig(name=item.kind, kind=item.kind, options={"url": item.url}))
+        if item.supported:
+            print(f"  found {item.label} at {item.url} — watching it")
+            sources.insert(
+                0, SourceConfig(name=item.kind, kind=item.kind, options={"url": item.url})
+            )
+        else:
+            print(f"  found {item.label} at {item.url} — no adapter yet")
+            print(f"    {item.note}")
+            print(f"    run: netpulse probe-router {item.url}")
+    if len(sources) == 1:
+        print("nothing readable found; the probe still monitors this connection")
     location = save_sources(sources)
-    print(f"written to {location} — `netpulse run` now watches it")
-    return 0
+    print(f"written to {location} — `netpulse run` reads it at startup")
+    return 0 if len(sources) > 1 else 1
 
 
 def probe_router_cmd(args: argparse.Namespace) -> int:

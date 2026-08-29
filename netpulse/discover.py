@@ -1,25 +1,23 @@
 """Find the router. Nobody should hand-edit a config file to point at their own network.
 
-Carrier CPE lives at a handful of well-known addresses (Huawei ships at 192.168.8.1, ZTE
-at 192.168.0.1, plus whatever the default gateway is), and each family answers a cheap,
-harmless identification request. Candidates are probed in parallel with short timeouts,
-so a full scan is over in about two seconds.
+The scan is a loop over the vendor registry, so what NetPulse can recognise is data in
+`vendors.py` rather than logic here. Addresses are probed in parallel because they are
+different hosts, but each host is asked *serially* — a fragile CPE box should never
+meet a burst of concurrent requests from a tool whose whole job is not to disturb it.
 """
 
 from __future__ import annotations
 
-import json
 import urllib.request
-import xml.etree.ElementTree as ET
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
 from netpulse.adapters.probe import default_gateway
+from netpulse.vendors import VENDORS, Vendor, candidate_addresses
 
-#: Where carrier CPE actually lives, tried alongside the default gateway.
-WELL_KNOWN = ("192.168.8.1", "192.168.0.1", "192.168.1.1")
 TIMEOUT_S = 2.0
+MAX_PARALLEL_HOSTS = 8
 
 Fetch = Callable[..., bytes]
 
@@ -35,95 +33,56 @@ class Discovered:
     kind: str
     url: str
     label: str
+    #: Empty when the router is supported; otherwise why it is not, and what helps.
+    note: str = ""
+
+    @property
+    def supported(self) -> bool:
+        return bool(self.kind)
 
 
-def _detect_huawei(base: str, fetch: Fetch) -> Discovered | None:
-    """The session-token endpoint answers unauthenticated on every Huawei CPE seen."""
-    try:
-        payload = fetch(f"{base}/api/webserver/SesTokInfo", {})
-        root = ET.fromstring(payload.decode("utf-8", errors="replace"))
-    except Exception:
-        return None
-    if root.findtext("SesInfo") is None and root.findtext("TokInfo") is None:
-        return None
-    label = "Huawei router"
-    try:
-        info = fetch(f"{base}/api/device/basic_information", {})
-        name = ET.fromstring(info.decode("utf-8", errors="replace")).findtext("devicename")
-        if name:
-            label = name
-    except Exception:
-        pass  # the identification is optional garnish
-    return Discovered(kind="huawei", url=base, label=label)
-
-
-def _detect_zte(base: str, fetch: Fetch) -> Discovered | None:
-    for path in ("/goform/goform_get_cmd_process", "/reqproc/proc_get"):
+def _try_vendor(base: str, vendor: Vendor, fetch: Fetch) -> Discovered | None:
+    """Ask one family's question. The first signature that matches wins; a later one
+    only ever refines the model name, never the identification."""
+    model: str | None = None
+    for signature in vendor.signatures:
+        headers = {key: value.format(base=base) for key, value in signature.headers.items()}
         try:
-            payload = fetch(
-                f"{base}{path}?isTest=false&multi_data=1&cmd=network_type,ppp_status",
-                {"Referer": f"{base}/index.html"},
-            )
-            data = json.loads(payload or b"")
+            payload = fetch(f"{base}{signature.path}", headers, signature.body)
         except Exception:
             continue
-        if isinstance(data, dict) and data:
-            return Discovered(kind="zte", url=base, label="ZTE router")
-    return None
+        found = vendor.match(payload)
+        if found is None:
+            continue
+        if found:
+            model = found
+            break
+        model = model or ""  # family confirmed, still nameless
+    if model is None:
+        return None
+    return Discovered(
+        kind=vendor.kind, url=base, label=_label(vendor.name, model), note=vendor.note
+    )
 
 
-def _detect_zlt(base: str, fetch: Fetch) -> Discovered | None:
-    """ZLT/Tozed (MTN's own-brand 5G boxes). cmd 113 answers unauthenticated and names
-    the board, so one harmless request both identifies the family and the model."""
-    try:
-        payload = fetch(
-            f"{base}/cgi-bin/http.cgi",
-            {"Content-Type": "application/json;charset=UTF-8"},
-            b'{"cmd":113,"method":"GET","sessionId":""}',
-        )
-        data = json.loads(payload or b"")
-    except Exception:
-        return None
-    if not isinstance(data, dict) or not data.get("success"):
-        return None
-    board = str(data.get("board_type") or "").strip()
-    return Discovered(kind="zlt", url=base, label=board or "ZLT router")
-
-
-def _detect_web_ui(base: str, fetch: Fetch) -> Discovered | None:
-    """Last resort: a router page whose API we do not speak yet. Reported honestly as
-    unidentified, so the user learns where their router is and can run the diagnostic,
-    instead of discovery staying silent about a box it clearly saw."""
-    try:
-        body = fetch(f"{base}/", {}).decode("utf-8", errors="replace").lower()
-    except Exception:
-        return None
-    if len(body) < 40:
-        return None
-    for marker, vendor in (
-        ("tozed", "ZLT (Tozed)"),
-        ("zlt", "ZLT (Tozed)"),
-        ("zte", "ZTE"),
-        ("huawei", "Huawei"),
-        ("mifi", "MiFi"),
-    ):
-        if marker in body:
-            return Discovered(
-                kind="unknown", url=base, label=f"{vendor} web UI (API not identified)"
-            )
-    if "<html" in body and ("login" in body or "router" in body or "admin" in body):
-        return Discovered(kind="unknown", url=base, label="router web UI (API not identified)")
-    return None
+def _label(vendor_name: str, model: str) -> str:
+    """ "ZLT" + "ZLT X17U" is "ZLT X17U", not "ZLT ZLT X17U" — several firmwares report a
+    board name that already carries the brand."""
+    name = vendor_name or model or "router"
+    if not model or model == name:
+        return name
+    if model.lower().startswith(name.lower()):
+        return model
+    return f"{name} {model}"
 
 
 def _probe(address: str, fetch: Fetch) -> Discovered | None:
     base = f"http://{address}"
-    return (
-        _detect_huawei(base, fetch)
-        or _detect_zlt(base, fetch)
-        or _detect_zte(base, fetch)
-        or _detect_web_ui(base, fetch)
-    )
+    for vendor in VENDORS:
+        found = _try_vendor(base, vendor, fetch)
+        if found is not None:
+            return found
+    return None
 
 
 def discover(
@@ -131,16 +90,18 @@ def discover(
     fetch: Fetch = _urllib_fetch,
     find_gateway: Callable[[], str | None] = default_gateway,
 ) -> list[Discovered]:
-    """Every router found on the candidate addresses, gateway first."""
-    seen: list[str] = []
-    for address in ((gateway or find_gateway()), *WELL_KNOWN):
-        if address and address not in seen:
-            seen.append(address)
+    """Every router found on the candidate addresses, gateway first.
 
-    with ThreadPoolExecutor(max_workers=len(seen) or 1) as pool:
-        results = pool.map(lambda address: _probe(address, fetch), seen)
+    Supported routers sort ahead of merely-identified ones, so the thing you can
+    actually watch is the thing you are offered.
+    """
+    addresses = candidate_addresses(gateway if gateway is not None else find_gateway())
+    workers = min(MAX_PARALLEL_HOSTS, len(addresses)) or 1
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        results = list(pool.map(lambda address: _probe(address, fetch), addresses))
+
     found: list[Discovered] = []
     for result in results:
-        if result is not None and all(r.url != result.url for r in found):
+        if result is not None and all(existing.url != result.url for existing in found):
             found.append(result)
-    return found
+    return sorted(found, key=lambda item: not item.supported)

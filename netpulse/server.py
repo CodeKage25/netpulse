@@ -176,6 +176,8 @@ class Api:
                     "kind": item.kind,
                     "url": item.url,
                     "label": item.label,
+                    "supported": item.supported,
+                    "note": item.note,
                     "already_watched": item.url in existing,
                 }
                 for item in found

@@ -891,16 +891,15 @@ document.getElementById("scan").addEventListener("click", async event => {
     document.getElementById("scanresults").innerHTML = data.found.map(f => {
       const action = f.already_watched
         ? `<span style="color:var(--good);font-size:12px">watching</span>`
-        : f.kind === "unknown"
-          ? `<span class="when">not supported yet</span>`
-          : `<button class="btn primary" data-kind="${f.kind}" data-url="${f.url}">Watch it</button>`;
-      const help = f.kind === "unknown"
-        ? `<div style="font-size:11.5px;color:var(--text-2);margin-top:8px;line-height:1.6">
-             Found the box, but NetPulse does not speak its API yet. Run
-             <code>netpulse probe-router ${f.url}</code> and open an issue with the output —
-             that is exactly what an adapter gets built from.</div>` : "";
+        : f.supported
+          ? `<button class="btn primary" data-kind="${f.kind}" data-url="${f.url}">Watch it</button>`
+          : `<span class="when">not supported yet</span>`;
+      const help = f.supported ? "" :
+        `<div style="font-size:11.5px;color:var(--text-2);margin-top:8px;line-height:1.6">
+           ${f.note} Run <code>netpulse probe-router ${f.url}</code> and open an issue
+           with the output — that is exactly what an adapter gets built from.</div>`;
       return `<div class="found" style="flex-wrap:wrap">
-        <div><b>${f.label}</b><br><span class="when">${f.url} · ${f.kind}</span></div>
+        <div><b>${f.label}</b><br><span class="when">${f.url}${f.kind ? " · " + f.kind : ""}</span></div>
         <span style="flex:1"></span>${action}${help}</div>`;
     }).join("");
   } catch { status.textContent = "scan failed"; }

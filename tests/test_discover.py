@@ -36,7 +36,7 @@ def test_a_huawei_router_is_found_at_the_gateway() -> None:
     assert len(found) == 1
     assert found[0].kind == "huawei"
     assert found[0].url == "http://192.168.8.1"
-    assert found[0].label == "B535-232"
+    assert found[0].label == "Huawei B535-232"
 
 
 def test_a_zte_router_is_found_on_a_well_known_address() -> None:
@@ -65,7 +65,7 @@ def test_the_gateway_is_probed_even_when_unusual() -> None:
     network = {"10.20.30.1": {"SesTokInfo": HUAWEI_TOKENS}}
     found = discover(gateway="10.20.30.1", fetch=fetch_for(network))
     assert found[0].url == "http://10.20.30.1"
-    assert found[0].label == "Huawei router"  # the name endpoint is optional garnish
+    assert found[0].label == "Huawei"  # the name endpoint is optional garnish
 
 
 def test_saved_sources_round_trip_through_the_config(tmp_path: Path) -> None:
@@ -134,8 +134,9 @@ def test_an_unidentified_router_page_is_reported_not_hidden() -> None:
 
     found = discover(gateway="192.168.0.1", fetch=fetch)
     assert len(found) == 1
-    assert found[0].kind == "unknown"
+    assert not found[0].supported  # named, but nothing can poll it yet
     assert "ZLT" in found[0].label
+    assert found[0].note  # and it says what would help
 
 
 def test_zte_adapter_falls_back_to_reqproc() -> None:
@@ -162,3 +163,111 @@ def test_zte_adapter_falls_back_to_reqproc() -> None:
     adapter.read()
     # The working path is remembered; the dead one is not retried every sweep.
     assert sum("/goform/" in call for call in calls) == 1
+
+
+# ------------------------------------------------------------------ the vendor registry
+
+
+def test_every_vendor_probe_is_read_only() -> None:
+    """A scan must never be the reason a fragile CPE box reboots. Nothing in the
+    registry may ask a router to change, restart, or forget anything."""
+    from netpulse.vendors import VENDORS
+
+    forbidden = (
+        "reboot",
+        "restart",
+        "restore",
+        "reset",
+        "set",
+        "delete",
+        "upgrade",
+        "logout",
+        "factory",
+    )
+    for vendor in VENDORS:
+        for signature in vendor.signatures:
+            target = (signature.path + (signature.body or b"").decode()).lower()
+            for word in forbidden:
+                assert word not in target, f"{vendor.name} probe looks like a write: {word}"
+
+
+def test_no_vendor_probe_carries_a_credential() -> None:
+    """Fingerprinting happens before any login, and must stay that way — a scanner that
+    needed a password would have to be told one for every address it tries."""
+    from netpulse.vendors import VENDORS
+
+    for vendor in VENDORS:
+        for signature in vendor.signatures:
+            blob = signature.path + str(signature.headers) + (signature.body or b"").decode()
+            for secret in ("password", "passwd", "Authorization", "token="):
+                assert secret.lower() not in blob.lower(), f"{vendor.name} probe carries a secret"
+
+
+def test_a_matcher_refuses_a_payload_from_another_family() -> None:
+    """Cross-matching would make discovery confidently wrong, which is worse than
+    silent: it sends someone to configure an adapter that can never work."""
+    from netpulse.vendors import VENDORS
+
+    payloads = {
+        "Huawei": HUAWEI_TOKENS,
+        "ZLT": json.dumps({"success": True, "cmd": 113, "board_type": "ZLT X17U"}).encode(),
+        "ZTE": ZTE_STATUS,
+    }
+    for vendor in VENDORS:
+        if vendor.name not in payloads:
+            continue
+        for other, payload in payloads.items():
+            if other == vendor.name:
+                assert vendor.match(payload) is not None, f"{vendor.name} rejects its own"
+            elif vendor.name:  # the page-sniffer is deliberately permissive
+                assert vendor.match(payload) is None, f"{vendor.name} claimed a {other} reply"
+
+
+def test_the_gateway_is_always_tried_first() -> None:
+    """Whatever the vendor defaults say, the box actually routing this machine's
+    traffic is the likeliest router on the network."""
+    from netpulse.vendors import candidate_addresses
+
+    assert candidate_addresses("10.20.30.1")[0] == "10.20.30.1"
+    assert "192.168.8.1" in candidate_addresses("10.20.30.1")
+
+
+def test_each_host_is_asked_one_question_at_a_time() -> None:
+    """Parallel across hosts, serial within one: a burst of concurrent requests is
+    exactly what a fragile embedded box handles worst."""
+    import threading
+
+    concurrent: dict[str, int] = {}
+    peak = 0
+    lock = threading.Lock()
+
+    def fetch(url: str, headers: dict[str, str], body: bytes | None = None) -> bytes:
+        nonlocal peak
+        host = url.split("/")[2]
+        with lock:
+            concurrent[host] = concurrent.get(host, 0) + 1
+            peak = max(peak, concurrent[host])
+        try:
+            raise OSError("no route")
+        finally:
+            with lock:
+                concurrent[host] -= 1
+
+    discover(gateway="10.0.0.1", fetch=fetch)
+    assert peak == 1
+
+
+def test_a_supported_router_is_offered_before_a_merely_named_one() -> None:
+    """The thing you can actually watch should be the thing you are offered first."""
+    page = b"<html><title>Tenda</title><body>router login</body></html>"
+
+    def fetch(url: str, headers: dict[str, str], body: bytes | None = None) -> bytes:
+        if "192.168.1.1" in url and url.rstrip("/").endswith("192.168.1.1"):
+            return page
+        if "192.168.8.1" in url and "SesTokInfo" in url:
+            return HUAWEI_TOKENS
+        raise OSError("no route")
+
+    found = discover(gateway="192.168.1.1", fetch=fetch)
+    assert [item.supported for item in found] == [True, False]
+    assert found[0].kind == "huawei"
