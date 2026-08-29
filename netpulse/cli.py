@@ -183,6 +183,19 @@ def discover_cmd(args: argparse.Namespace) -> int:
     return 0 if len(sources) > 1 else 1
 
 
+def path_cmd(args: argparse.Namespace) -> int:
+    from netpulse.path import analyse, trace
+
+    print(f"tracing the path to {args.target}…", flush=True)
+    hops = trace(args.target)
+    for hop in hops:
+        timing = "*" if hop.silent else f"{hop.rtt_ms:.1f} ms"
+        print(f"  {hop.number:2}  {hop.host:22} {timing}")
+    verdict = analyse(hops)
+    print(f"\n{verdict.summary}\n{verdict.detail}")
+    return 0 if hops else 1
+
+
 def probe_router_cmd(args: argparse.Namespace) -> int:
     from netpulse.probe_router import probe_router
 
@@ -236,6 +249,10 @@ def main(argv: list[str] | None = None) -> int:
 
     disco = commands.add_parser("discover", help="find your router and write the config")
     disco.set_defaults(handler=discover_cmd)
+
+    tracing = commands.add_parser("path", help="trace the path and say where the delay starts")
+    tracing.add_argument("target", nargs="?", default="1.1.1.1")
+    tracing.set_defaults(handler=path_cmd)
 
     probing = commands.add_parser(
         "probe-router", help="show what a router answers, for adapter debugging"

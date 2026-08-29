@@ -27,6 +27,7 @@ from netpulse.discover import discover
 from netpulse.export import prometheus, series, to_csv, to_json, uptime_report
 from netpulse.insights import diagnose
 from netpulse.monitor import Collector
+from netpulse.path import analyse, trace
 from netpulse.quality import assess
 from netpulse.speedtest import run_speedtest
 from netpulse.storage import Store
@@ -211,6 +212,25 @@ class Api:
     def uptime(self, source: str, days: float) -> dict[str, Any]:
         now = self._clock()
         return uptime_report(self.store, source, now - timedelta(days=days), now, self.interval_s)
+
+    def path(self, target: str) -> dict[str, Any]:
+        """Trace the path and attribute the delay. Runs on request only.
+
+        Never on the poll loop: a traceroute takes tens of seconds, and a call that
+        long inside a five-second cycle is how a monitor invents the outage it then
+        writes down.
+        """
+        verdict = analyse(trace(target or "1.1.1.1"))
+        return {
+            "where": verdict.where,
+            "summary": verdict.summary,
+            "detail": verdict.detail,
+            "culprit": verdict.culprit.number if verdict.culprit else None,
+            "hops": [
+                {"n": hop.number, "host": hop.host, "rtt_ms": hop.rtt_ms, "silent": hop.silent}
+                for hop in verdict.hops
+            ],
+        }
 
     def quality(self, source: str) -> dict[str, Any]:
         graded = assess(self.store, source, self._clock())

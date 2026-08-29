@@ -102,7 +102,9 @@ def make_handler(api: Api) -> type[BaseHTTPRequestHandler]:
             url = urlparse(self.path)
             params = {key: values[0] for key, values in parse_qs(url.query).items()}
             try:
-                if url.path == "/api/discover":
+                if url.path == "/api/path":
+                    self._json(api.path(params.get("target", "1.1.1.1")))
+                elif url.path == "/api/discover":
                     self._json(api.discover_routers())
                 elif url.path == "/api/sources":
                     self._json(
