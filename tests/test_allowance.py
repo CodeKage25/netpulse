@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime
 
+import pytest
+
 from netpulse.allowance import assess, crossed, cycle_start, travelled
 from netpulse.storage import Store
 from tests.conftest import Clock
@@ -139,15 +141,45 @@ def test_a_router_reset_mid_cycle_does_not_erase_the_usage(store: Store, clock: 
 
 
 def test_readings_before_the_cycle_started_are_not_counted(store: Store, clock: Clock) -> None:
-    """Last month's traffic is last month's problem."""
+    """Last month's traffic is last month's problem — the router zeroes its counter and
+    the previous cycle's readings are outside the window entirely."""
     clock.set(datetime(2026, 7, 20, tzinfo=UTC))
-    seed(store, clock, [0.0, 40 * GB], step_hours=24)
+    seed(store, clock, [30 * GB, 40 * GB], step_hours=24)
     clock.set(datetime(2026, 8, 2, tzinfo=UTC))
-    seed(store, clock, [40 * GB, 45 * GB], step_hours=12)
+    seed(store, clock, [0.0, 5 * GB], step_hours=12)
 
     result = assess(store, "mtn", clock.now, limit_bytes=100 * GB, reset_day=1)
     assert result is not None
     assert result.used_bytes == 5 * GB
+
+
+def test_the_counter_is_the_month_total_not_the_part_we_watched(store: Store, clock: Clock) -> None:
+    """A month counter is zero at the cycle's start whether or not anyone was watching.
+
+    Joining mid-month and reporting only the hours since is the difference between
+    "you have used 23.6 GB" and "we watched you use 227 MB" — and only one of those
+    answers the question anyone is asking.
+    """
+    clock.set(datetime(2026, 8, 20, tzinfo=UTC))  # three weeks into the cycle
+    seed(store, clock, [23.4 * GB, 23.5 * GB, 23.6 * GB], step_hours=2)
+
+    result = assess(store, "mtn", clock.now, limit_bytes=100 * GB, reset_day=1)
+    assert result is not None
+    assert result.used_bytes == pytest.approx(23.6 * GB)
+    # …and it still knows how much of that it saw happen, which is what the rate uses.
+    assert result.observed_bytes == pytest.approx(0.2 * GB)
+
+
+def test_the_run_rate_uses_the_span_actually_watched(store: Store, clock: Clock) -> None:
+    """Dividing a month-to-date total by the hours we have been running would project a
+    fortnight of somebody else's traffic onto every remaining day."""
+    clock.set(datetime(2026, 8, 20, tzinfo=UTC))
+    seed(store, clock, [50 * GB, 51 * GB], step_hours=24)  # 1 GB watched over 1 day
+
+    result = assess(store, "mtn", clock.now, limit_bytes=100 * GB, reset_day=1)
+    assert result is not None
+    assert result.rate_per_day is not None
+    assert round(result.rate_per_day / GB) == 1  # not 51
 
 
 def test_a_download_upload_pair_is_summed_when_there_is_no_total(

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import queue
+from functools import lru_cache
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib import resources
 from typing import Any
@@ -23,8 +24,26 @@ from netpulse.api import Api
 __all__ = ["Api", "make_handler", "serve"]
 
 
+#: Assets are authored as separate files and stitched into one response at startup.
+#: The page must still arrive as a single self-contained document — it has to render
+#: during the outage it is explaining, and a page that fetches to describe the network
+#: goes blank exactly when it is needed — but nobody should have to maintain a
+#: thousand-line file to get that.
+ASSETS = ("app.css", "app.js")
+
+
+@lru_cache(maxsize=1)
 def _dashboard_html() -> bytes:
-    return (resources.files("netpulse") / "web" / "dashboard.html").read_bytes()
+    """The shell with its assets inlined, built once per process.
+
+    Cached rather than re-read: the page is static, and a dashboard being refreshed
+    every fifteen seconds should not touch the disk to say the same thing again.
+    """
+    web = resources.files("netpulse") / "web"
+    page = (web / "dashboard.html").read_text()
+    for asset in ASSETS:
+        page = page.replace("{{" + asset + "}}", (web / asset).read_text())
+    return page.encode()
 
 
 def make_handler(api: Api) -> type[BaseHTTPRequestHandler]:

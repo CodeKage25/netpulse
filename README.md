@@ -92,6 +92,7 @@ answer every time, evidence attached.
 netpulse run [--demo] [--port 8787]   record + dashboard (+ background discovery)
 netpulse discover                     find your router, write the config
 netpulse probe-router <url>           show what a router answers (for new adapters)
+netpulse path [target]                trace the path, say where the delay starts
 netpulse status                       latest reading per source, with 24h coverage
 netpulse events [--hours 48]          outages and degradations
 netpulse diagnose                     rule-based findings (exit 1 on critical)
@@ -159,6 +160,57 @@ charts with per-chart time ranges, an events feed, and a **connection quality gr
 (A–F, scored on p95 latency, jitter, tail and loss, with jitter weighted above the tail
 because a predictable 40ms beats a fast-but-spiky link). Light theme included; every
 asset inline, so it renders mid-outage.
+
+## Alerts you write yourself
+
+Dishylink's alerts are firmware booleans with nothing to configure. Yours are rules:
+
+```toml
+[[alert]]
+metric = "signal.rsrp_dbm"
+below = -105
+for_minutes = 5
+message = "Signal weak enough to drop the connection"
+
+[[channel]]
+kind = "ntfy"           # webhook · slack · discord · ntfy · home_assistant
+url = "https://ntfy.sh/my-private-topic"
+```
+
+A duration is measured in time, not polls, so "for 5 minutes" means five minutes at any
+poll rate — and cannot be satisfied by two readings either side of a gap. **Missing data
+never breaches a rule**: absence is not a weak signal, and a router that stops answering
+should not trip every threshold at once.
+
+Alerts reach a desktop notification and any channel you configure, because an OS toast
+is useless when the machine watching your link is a Pi in a cupboard. Only the alert
+travels — never credentials, addresses, device names or history.
+
+## Where's the problem?
+
+```bash
+netpulse path              # or the button in the dashboard
+```
+
+Traces the path and attributes the delay. A private address past your router is inside
+your carrier's network and is named as theirs; a public one might be their transit, a
+peering link or the far end, and it says so rather than guessing — telling those apart
+needs a lookup of who owns the address, which would mean sending your path to someone
+else. A middle hop reporting 400 ms while everything past it reports 40 ms is a busy
+control plane, not a fault, and only a rise that persists to the end is counted.
+
+## Getting the data out
+
+| What | Where |
+|---|---|
+| Prometheus / Grafana | `GET /metrics` |
+| CSV for a spreadsheet | `GET /api/export?source=…&format=csv` |
+| JSON for a script | `GET /api/export?source=…&format=json` |
+| Uptime report | `GET /api/uptime?source=…&days=30` |
+
+Gaps stay empty rather than becoming zeros, every export carries its coverage fraction,
+and the uptime report gives uptime **and** coverage separately — because 99.9% uptime
+over 3% coverage is not a 99.9% month, and one number would let you pretend it was.
 
 ## Also in the box
 

@@ -80,6 +80,9 @@ class Allowance:
     exhausted_on: date | None
     #: What the cycle will total at this rate. None when the rate is not yet meaningful.
     projected_bytes: float | None
+    #: Of `used_bytes`, how much NetPulse watched happen. The rest is the router's own
+    #: count from before it was being recorded — complete, but not ours.
+    observed_bytes: float = 0.0
 
     @property
     def fraction(self) -> float | None:
@@ -112,24 +115,42 @@ def _odometer(store: Store, source: str, since: datetime) -> list[float]:
     return [down + (ups[i] if i < len(ups) else 0.0) for i, down in enumerate(downs)]
 
 
-def travelled(readings: list[float]) -> float:
+def travelled(readings: list[float], anchor: float | None = None) -> float:
     """Distance covered by an odometer that may have been reset along the way.
 
     Every backwards step is a reset, not negative usage: the data before it was still
     used, so the segments are summed rather than the endpoints subtracted. Getting this
     wrong reads as a sudden refund of a month's traffic.
+
+    `anchor` is the odometer's value at the start of the cycle. For a `data.month_*`
+    counter it is 0 by contract — the router zeroes it each month, so its current value
+    is already the month to date, and anchoring at the first reading NetPulse happened
+    to see would report only the hours since it started watching. That is the difference
+    between "you have used 23.6 GB" and "we watched you use 227 MB", and only one of
+    those answers the question anyone is asking.
     """
     if not readings:
         return 0.0
     total = 0.0
-    anchor = readings[0]
+    start = readings[0] if anchor is None else anchor
     previous = readings[0]
     for reading in readings[1:]:
         if reading < previous:  # the odometer went back: reset, reboot, or wrap
-            total += previous - anchor
-            anchor = reading
+            total += previous - start
+            start = reading
         previous = reading
-    return total + previous - anchor
+    return total + previous - start
+
+
+def _watched_days(store: Store, source: str, since: datetime, now: datetime) -> float:
+    """Days between the first and last odometer reading — the span we can speak for."""
+    readings = store.samples_span(source, TOTAL_METRIC, since) or store.samples_span(
+        source, DOWN_METRIC, since
+    )
+    if readings is None:
+        return 0.0
+    first, last = readings
+    return max(0.0, (last - first).total_seconds() / 86400)
 
 
 def assess(
@@ -147,12 +168,20 @@ def assess(
     readings = _odometer(store, source, since)
     if not readings:
         return None
-    used = travelled(readings)
+    # A month counter is zero at the cycle's start whether or not anyone was watching.
+    used = travelled(readings, anchor=0.0)
+    # How much of the cycle NetPulse actually observed, so the panel can say whether
+    # the figure is the router's complete count or only the part we saw.
+    observed = travelled(readings)
 
     days_total = (end - start).days
     elapsed = max(0.0, (now - since).total_seconds() / 86400)
-    # Under six hours of a cycle, a run-rate is noise wearing a decimal point.
-    rate = used / elapsed if elapsed >= 0.25 else None
+    # The rate comes from what was observed over the time it was observed — dividing a
+    # month-to-date total by the hours we have been watching would project a fortnight
+    # of traffic onto every remaining day. Under six hours, a rate is noise wearing a
+    # decimal point either way.
+    watched = _watched_days(store, source, since, now)
+    rate = observed / watched if watched >= 0.25 else None
 
     projected = rate * days_total if rate is not None else None
     exhausted: date | None = None
@@ -173,6 +202,7 @@ def assess(
         rate_per_day=rate,
         exhausted_on=exhausted,
         projected_bytes=projected,
+        observed_bytes=observed,
     )
 
 

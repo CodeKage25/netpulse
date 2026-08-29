@@ -10,21 +10,20 @@ config.
 Modules form a DAG with one direction of flow. Nothing lower may import anything higher.
 
 ```
-                      cli · server (HTTP transport)
+              cli · server (HTTP transport) · web/ (the page)
                                   │
                                  api                  ← the query layer
                                   │
-                    ┌─────────────┼──────────────┐
-                monitor        analysis        discover
-                (collector)    quality           │
-                    │          insights       vendors    ← registry (data)
-                    │          allowance
-                    │          speedtest
-                    │          notify
-                    └─────────────┼──────────────┐
-                               storage        adapters   ← one per router family
-                                  │              │
-                                clock ─────── model      ← types, aggregation rules
+             ┌────────────────────┼────────────────────┐
+         monitor               analysis            discover
+        (collector)      quality · insights            │
+             │           allowance · alerts        vendors   ← registry (data)
+             │           export · path · quality
+             │           speedtest · notify · channels
+             └────────────────────┼────────────────────┐
+                               storage              adapters  ← one per router family
+                                  │                     │
+                                clock ─────────────── model   ← types, aggregation
 ```
 
 Two consequences worth stating because they are the point:
@@ -144,10 +143,38 @@ outage durations can be exercised at real dates.
 
 ## The web layer
 
-One HTML file, every asset inline — no CDN, no build step, no fonts to fetch. The page
-must render during the outage it is explaining, and a page that fetches from the network
-to describe the network is a page that goes blank exactly when it is needed.
+### Why the UI is HTML
 
-The dashboard merges sources rather than making you pick between them: a router knows
-the radio and cannot see past its WAN port, a probe knows what the internet feels like
-and nothing about the radio. Each metric resolves to whichever source reports it.
+Because the alternative is Electron, and Electron costs about 200 MB, a code-signing
+certificate, a per-platform build, and a release you have to notarize. Dishylink pays
+all of that and still has no Linux build, no mobile, and unsigned Windows binaries that
+raise a SmartScreen warning.
+
+A local web dashboard costs none of it. `netpulse run` starts a stdlib HTTP server on
+loopback and any browser on the machine is the client — the same code serves a laptop, a
+phone on the same network, and a headless Raspberry Pi over SSH port-forwarding. Nothing
+to install, nothing to sign, nothing to update separately from the Python package. It is
+also why the dashboard is responsive down to a phone: a network monitor is most needed
+on the device in your hand while the connection is misbehaving.
+
+### One response, three files
+
+    web/dashboard.html   the shell — structure only, with {{app.css}} / {{app.js}} slots
+    web/app.css          the design system
+    web/app.js           charts, data, interaction
+
+The server stitches them into a single self-contained document at startup and caches it.
+The page must still arrive whole, with every asset inline — no CDN, no fonts to fetch,
+no second request — because it has to render during the outage it is explaining, and a
+page that fetches from the network to describe the network goes blank exactly when it is
+needed. But that guarantee is about what ships, not about what anyone has to edit, and a
+test asserts both: no external `src`/`href` survives, and no `{{placeholder}}` does
+either.
+
+### What the dashboard does with sources
+
+It merges rather than making you choose. A router knows the radio and cannot see past
+its WAN port; a probe knows what the internet feels like and nothing about the radio.
+Each metric resolves to whichever source reports it, so the page shows one connection
+instead of two partial ones.
+

@@ -371,6 +371,29 @@ class Store:
             ).fetchall()
         return [row["value"] for row in rows]
 
+    def samples_span(
+        self, source: str, metric: str, since: datetime, until: datetime | None = None
+    ) -> tuple[datetime, datetime] | None:
+        """First and last time a metric was recorded, or None if never.
+
+        The span a figure can speak for: a rate divided by wall-clock time would claim
+        a period nobody was watching. Unbounded above like `values`, because the newest
+        reading is exactly the end of the span and a half-open window would drop it.
+        """
+        clause = "AND at < ?" if until is not None else ""
+        parameters: tuple[object, ...] = (source, metric, _ts(since))
+        if until is not None:
+            parameters += (_ts(until),)
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT MIN(at) AS first, MAX(at) AS last FROM samples "
+                f"WHERE source = ? AND metric = ? AND at >= ? {clause}",
+                parameters,
+            ).fetchone()
+        if row is None or row["first"] is None:
+            return None
+        return datetime.fromisoformat(row["first"]), datetime.fromisoformat(row["last"])
+
     def sources(self) -> list[str]:
         with self._lock:
             rows = self._conn.execute(

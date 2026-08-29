@@ -89,6 +89,11 @@ def test_the_dashboard_page_is_self_contained(served: str) -> None:
     # that cannot explain the outage. Prose may still name an address (the router's).
     for attribute in ('src="http', "src='http", 'href="http', "href='http", "@import"):
         assert attribute not in html
+    # The assets are authored separately and stitched in; none may survive as a
+    # placeholder, or the page ships with a hole where its stylesheet should be.
+    assert "{{" not in html
+    assert "<style>" in html and "position: relative" in html  # css really inlined
+    assert "async function refresh()" in html  # and so did the script
     assert "https://" not in html
     assert "<script src" not in html
 
