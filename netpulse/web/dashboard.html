@@ -508,7 +508,7 @@ function chart(el, seriesList, opts) {
   node.addEventListener("mouseleave", () => { tt.style.display = "none"; cross.setAttribute("opacity", 0); });
 }
 
-function histogram(el, bins, color, format) {
+function histogram(el, bins, color, format, overflowing) {
   if (!bins.length) { el.innerHTML = `<div class="empty">Not enough samples yet.</div>`; return; }
   const W = 1000, H = 130, gap = 2;
   const peak = Math.max(...bins.map(b => b.count)) || 1;
@@ -524,11 +524,12 @@ function histogram(el, bins, color, format) {
            `${format(bin.lo)} – ${format(bin.hi)}: ${(100 * bin.count / total).toFixed(1)}%</title></rect>`;
   });
   svg += `</svg>`;
+  const ceiling = format(bins[bins.length - 1].hi) + (overflowing ? "+" : "");
   el.innerHTML = svg +
     `<div style="display:flex;justify-content:space-between;font-size:10.5px;color:var(--text-3);margin-top:3px">
        <span>${format(bins[0].lo)}</span>
        <span>${(100 * peak / total).toFixed(1)}% in the tallest bin</span>
-       <span>${format(bins[bins.length - 1].hi)}</span></div>`;
+       <span>${ceiling}</span></div>`;
 }
 
 function spark(points, color) {
@@ -760,10 +761,21 @@ async function drawDevices() {
 
 /* ============================== detail view ============================== */
 async function openDetail(metric) {
+  if (!METRICS[metric]) return;
   state.detail = metric;
   state.detailMinutes = state.minutes;
   document.getElementById("modal-root").hidden = false;
+  // The open view lives in the URL, so a reload lands where you were and a link to
+  // "the latency page" is a link someone can actually send.
+  if (location.hash.slice(1) !== metric) history.replaceState(null, "", "#" + metric);
   await renderDetail();
+}
+
+function closeOverlays() {
+  document.getElementById("modal-root").hidden = true;
+  document.getElementById("drawer-root").hidden = true;
+  state.detail = null;
+  if (location.hash) history.replaceState(null, "", location.pathname);
 }
 
 async function renderDetail() {
@@ -774,14 +786,16 @@ async function renderDetail() {
     json(`/api/history?source=${source}&metric=${metric}&minutes=${minutes}&buckets=140`),
     json(`/api/distribution?source=${source}&metric=${metric}&minutes=${minutes}`),
   ]);
-  const shown = series.points.filter(v => v != null);
   const toChart = spec.toChart || (v => v);
   const live = lastOverview?.sources.find(s => s.name === state.primary)?.latest?.[metric];
+  // Best and worst come from raw samples, never from the plotted series: latency
+  // buckets keep the worst value in each, so the smallest of those maxima is not the
+  // best reading — it is the best bad minute, which is a different and wrong number.
   const heroes = [
     ["Current", live == null ? "–" : spec.tile(live)],
     ["Average", dist.mean == null ? "–" : spec.tile(dist.mean)],
-    ["Best", shown.length ? spec.tile(Math.min(...shown)) : "–"],
-    ["Worst", shown.length ? spec.tile(Math.max(...shown)) : "–"],
+    ["Best", dist.min == null ? "–" : spec.tile(dist.min)],
+    ["Worst", dist.max == null ? "–" : spec.tile(dist.max)],
   ];
 
   document.getElementById("modal").innerHTML = `
@@ -809,7 +823,7 @@ async function renderDetail() {
     { times: series.times, height: 200, format: spec.axisFmt,
       tip: spec.chartFmt, floor: spec.floor ?? null });
   histogram(document.getElementById("detail-hist"), dist.bins, css(spec.color),
-    v => spec.tile(v) + " " + spec.unit);
+    v => spec.tile(v) + " " + spec.unit, dist.overflowing);
 }
 
 /* ============================== wiring ============================== */
@@ -830,16 +844,9 @@ document.addEventListener("click", event => {
   if (detailRange) { state.detailMinutes = Number(detailRange.dataset.detailM); renderDetail(); return; }
   const tile = event.target.closest(".tile[data-metric]");
   if (tile) { openDetail(tile.dataset.metric); return; }
-  if (event.target.closest("[data-dismiss]")) {
-    document.getElementById("modal-root").hidden = true;
-    document.getElementById("drawer-root").hidden = true;
-  }
+  if (event.target.closest("[data-dismiss]")) closeOverlays();
 });
-document.addEventListener("keydown", event => {
-  if (event.key !== "Escape") return;
-  document.getElementById("modal-root").hidden = true;
-  document.getElementById("drawer-root").hidden = true;
-});
+document.addEventListener("keydown", event => { if (event.key === "Escape") closeOverlays(); });
 
 document.getElementById("theme").addEventListener("click", () => {
   const root = document.documentElement;
@@ -909,7 +916,7 @@ document.getElementById("scanresults").addEventListener("click", async event => 
 
 window.addEventListener("resize", () => { if (firstPaintDone) drawCharts(); });
 
-refresh();
+refresh().then(() => { if (location.hash) openDetail(location.hash.slice(1)); });
 setInterval(refresh, 15000);
 try {
   const stream = new EventSource("/api/stream");

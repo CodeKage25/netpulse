@@ -142,3 +142,32 @@ def test_uptime_is_a_poll_fraction_not_a_bucket_minimum(store: Store, clock: Clo
     uptime = api._uptime("wan", clock.now)
     assert uptime is not None
     assert 0.94 < uptime < 0.98
+
+
+def test_the_distribution_reports_raw_extremes_not_bucketed_ones(
+    store: Store, clock: Clock
+) -> None:
+    """Latency buckets keep the worst value, so the smallest of those maxima is the best
+    bad minute, not the best reading. The detail view's Best figure must not inherit it.
+    """
+    from netpulse.adapters.fake import ScriptedAdapter
+    from netpulse.monitor import Collector
+    from netpulse.server import Api
+
+    for value in [150.0] + [200.0] * 60 + [1300.0]:
+        store.record("wan", {"latency.internet_ms": value})
+        clock.advance(seconds=5)
+    api = Api(
+        store,
+        Collector(store, [ScriptedAdapter("wan", [])], clock=clock),
+        interval_s=5,
+        clock=clock,
+    )
+
+    dist = api.distribution("wan", "latency.internet_ms", 60)
+    assert dist["min"] == 150.0
+    assert dist["max"] == 1300.0
+    # The lone spike must not flatten every real sample into one bin.
+    assert dist["overflowing"] is True
+    assert dist["bins"][-1]["hi"] < 1300.0
+    assert sum(b["count"] for b in dist["bins"]) == dist["count"]

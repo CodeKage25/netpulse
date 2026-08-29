@@ -117,19 +117,34 @@ class Api:
         if len(values) < 4:
             return {"bins": [], "count": len(values)}
         low, high = min(values), max(values)
+        summary = {
+            "count": len(values),
+            "mean": sum(values) / len(values),
+            "min": low,
+            "max": high,
+        }
         if high <= low:
-            return {"bins": [{"lo": low, "hi": high, "count": len(values)}], "count": len(values)}
-        width = (high - low) / bins
+            return {**summary, "bins": [{"lo": low, "hi": high, "count": len(values)}]}
+
+        # One 1300ms spike over a 200ms norm would push every real sample into the first
+        # bin and draw a picture of nothing. Bins span up to p95 and the last one absorbs
+        # the tail, so the shape stays legible and the outliers are still counted.
+        ordered = sorted(values)
+        top = ordered[min(len(ordered) - 1, int(len(ordered) * 0.95))]
+        overflowing = top < high
+        width = (top - low) / bins if top > low else 0.0
+        if width <= 0:
+            return {**summary, "bins": [{"lo": low, "hi": high, "count": len(values)}]}
         counts = [0] * bins
         for value in values:
             counts[min(bins - 1, int((value - low) / width))] += 1
         return {
+            **summary,
+            "overflowing": overflowing,
             "bins": [
                 {"lo": low + i * width, "hi": low + (i + 1) * width, "count": count}
                 for i, count in enumerate(counts)
             ],
-            "count": len(values),
-            "mean": sum(values) / len(values),
         }
 
     def quality(self, source: str) -> dict[str, Any]:
