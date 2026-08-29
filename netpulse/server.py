@@ -60,6 +60,29 @@ def make_handler(api: Api) -> type[BaseHTTPRequestHandler]:
                     )
                 elif url.path == "/api/allowance":
                     self._json(api.allowance(params.get("source", "")))
+                elif url.path == "/metrics":
+                    self._send(200, api.prometheus().encode(), "text/plain; version=0.0.4")
+                elif url.path == "/api/uptime":
+                    self._json(api.uptime(params.get("source", ""), float(params.get("days", "7"))))
+                elif url.path == "/api/export":
+                    body_csv, body_json = api.export(
+                        params.get("source", ""),
+                        int(params.get("minutes", "1440")),
+                        int(params.get("buckets", "1440")),
+                        [m for m in params.get("metrics", "").split(",") if m],
+                    )
+                    wants_json = params.get("format", "csv") == "json"
+                    stamp = params.get("source", "netpulse")
+                    self._send(
+                        200,
+                        (body_json if wants_json else body_csv).encode(),
+                        "application/json" if wants_json else "text/csv",
+                        # The browser saves it rather than rendering a wall of numbers.
+                        extra={
+                            "Content-Disposition": f'attachment; filename="netpulse-{stamp}.'
+                            f'{"json" if wants_json else "csv"}"'
+                        },
+                    )
                 elif url.path == "/api/quality":
                     self._json(api.quality(params.get("source", "")))
                 elif url.path == "/api/devices":
@@ -119,10 +142,18 @@ def make_handler(api: Api) -> type[BaseHTTPRequestHandler]:
         def _json(self, payload: dict[str, Any], status: int = 200) -> None:
             self._send(status, json.dumps(payload).encode(), "application/json")
 
-        def _send(self, status: int, body: bytes, content_type: str) -> None:
+        def _send(
+            self,
+            status: int,
+            body: bytes,
+            content_type: str,
+            extra: dict[str, str] | None = None,
+        ) -> None:
             self.send_response(status)
             self.send_header("Content-Type", content_type)
             self.send_header("Content-Length", str(len(body)))
+            for header, value in (extra or {}).items():
+                self.send_header(header, value)
             self.end_headers()
             self.wfile.write(body)
 

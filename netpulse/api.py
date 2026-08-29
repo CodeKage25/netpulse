@@ -24,6 +24,7 @@ from netpulse.allowance import assess as assess_allowance
 from netpulse.clock import Clock, utcnow
 from netpulse.config import SourceConfig
 from netpulse.discover import discover
+from netpulse.export import prometheus, series, to_csv, to_json, uptime_report
 from netpulse.insights import diagnose
 from netpulse.monitor import Collector
 from netpulse.quality import assess
@@ -180,6 +181,36 @@ class Api:
                 "on_track": result.on_track,
             }
         }
+
+    def prometheus(self) -> str:
+        latest: dict[str, dict[str, float]] = {}
+        texts: dict[str, dict[str, str]] = {}
+        coverage: dict[str, float] = {}
+        now = self._clock()
+        for name in self.collector.sources:
+            # store.latest() carries (when, value) so callers can judge staleness; the
+            # exposition format has no place for the timestamp.
+            latest[name] = {metric: value for metric, (_, value) in self.store.latest(name).items()}
+            texts[name] = self.store.latest_texts(name)
+            coverage[name] = self.store.coverage(
+                name, now - timedelta(hours=1), now, self.interval_s
+            ).fraction
+        return prometheus(latest, texts, coverage)
+
+    def export(
+        self, source: str, minutes: int, buckets: int, metrics: list[str]
+    ) -> tuple[str, str]:
+        """(header, rows) rendered as CSV — the shape most ISP disputes get settled in."""
+        now = self._clock()
+        since = now - timedelta(minutes=minutes)
+        chosen = metrics or sorted(self.store.latest(source))  # every metric it reports
+        header, rows = series(self.store, source, chosen, since, now, buckets)
+        coverage = self.store.coverage(source, since, now, self.interval_s).fraction
+        return to_csv(header, rows), to_json(header, rows, source, coverage)
+
+    def uptime(self, source: str, days: float) -> dict[str, Any]:
+        now = self._clock()
+        return uptime_report(self.store, source, now - timedelta(days=days), now, self.interval_s)
 
     def quality(self, source: str) -> dict[str, Any]:
         graded = assess(self.store, source, self._clock())
