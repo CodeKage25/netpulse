@@ -7,6 +7,7 @@
    apart and labels each honestly rather than blending them into one number. */
 
 async function showNetwork() {
+  await ready;  // a source must be resolved; the dashboard need not have succeeded
   const source = state.primary;
   const modal = document.getElementById("modal");
   document.getElementById("modal-root").hidden = false;

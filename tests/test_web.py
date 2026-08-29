@@ -216,3 +216,24 @@ def test_the_spectrum_view_states_what_is_measured_and_what_is_shared() -> None:
     view = (ASSETS / "views" / "spectrum.js").read_text()
     assert "leg's signal" in view
     assert "one figure for its LTE" in view
+
+
+def test_a_view_opened_by_link_waits_on_readiness_not_on_success() -> None:
+    """A linked view is most wanted exactly when something is broken enough to make a
+    panel fail, so it must not sit inside the dashboard refresh's success path — and it
+    must not start a second refresh either, which queues it behind the page that has
+    already loaded."""
+    app = code_of(ASSETS / "app.js")
+    assert "const ready = refresh()" in app
+    for name in ("spectrum", "network", "usage"):
+        view = code_of(ASSETS / "views" / f"{name}.js")
+        assert "await ready" in view, f"{name} does not wait on the shared readiness"
+        assert "await refresh()" not in view, f"{name} starts a second refresh"
+
+
+def test_the_page_surfaces_its_own_failures() -> None:
+    """A monitoring tool that goes blank while claiming everything is fine is the worst
+    version of failing silently."""
+    app = code_of(ASSETS / "app.js")
+    assert 'addEventListener("error"' in app
+    assert 'addEventListener("unhandledrejection"' in app

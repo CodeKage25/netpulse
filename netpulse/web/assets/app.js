@@ -1,5 +1,27 @@
 /* Wiring: events, routing, and the poll loop. No rendering lives here. */
 
+/* A page that fails silently is worse than one that fails loudly, and a monitoring tool
+   that goes blank while claiming everything is fine is the worst version of that. Any
+   uncaught error surfaces as a banner rather than an empty screen. */
+function reportFailure(what, error) {
+  const message = error && error.message ? error.message : String(error);
+  let banner = document.getElementById("failure");
+  if (!banner) {
+    banner = document.createElement("div");
+    banner.id = "failure";
+    banner.className = "notice";
+    banner.style.borderLeftColor = "var(--critical)";
+    document.getElementById("notices").prepend(banner);
+  }
+  banner.innerHTML = `<div style="flex:1"><h3>${what}</h3>
+    <p><code>${message}</code> — the rest of the page is still live. This is a bug;
+    please report it.</p></div>`;
+  console.error(what, error);
+}
+
+window.addEventListener("error", event => reportFailure("Something broke", event.error || event.message));
+window.addEventListener("unhandledrejection", event => reportFailure("A request failed", event.reason));
+
 /* ============================== wiring ============================== */
 for (const seg of document.querySelectorAll(".seg"))
   if (seg.id !== "uptime-seg")
@@ -137,12 +159,25 @@ window.addEventListener("orientationchange", redraw);
 
 const OVERLAYS = { spectrum: showSpectrum, path: showPath, speedtests: showSpeedtests,
                    network: showNetwork, usage: showUsage };
-refresh().then(() => {
+
+function openFromHash() {
   const target = location.hash.slice(1);
   if (!target) return;
-  // #spectrum, #path and #speedtests open their view; anything else is a metric.
+  // #spectrum, #path and the rest open their view; anything else names a metric.
   (OVERLAYS[target] || (() => openDetail(target)))();
-});
+}
+
+/* One shared readiness promise.
+
+   The deep link must not wait on the dashboard *succeeding* — a linked view is most
+   wanted exactly when something is broken enough to make a panel fail — but it does
+   need a source resolved. Views therefore await `ready`, which is the first refresh
+   whatever it does. Kicking off a second refresh instead put twenty requests over the
+   browser's six connections and left the view waiting on a queue behind the page that
+   had already loaded. */
+const ready = refresh().catch(error => reportFailure("Some panels failed to load", error));
+openFromHash();
+window.addEventListener("hashchange", openFromHash);
 setInterval(refresh, 15000);
 try {
   const stream = new EventSource("/api/stream");

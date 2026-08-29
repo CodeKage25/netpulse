@@ -15,6 +15,9 @@
    LTE carriers together and one for 5G — so the bars within a leg share a height and
    the panel says so rather than implying five separate measurements. */
 
+/* Drawn width floor. Below this a carrier is a hairline at any sane zoom, and a
+   chart nobody can see is not more honest than one with a stated minimum. */
+const MIN_VISIBLE_MHZ = 60;
 const SPECTRUM_FLOOR_DBM = -120;
 const SPECTRUM_CEILING_DBM = -60;
 
@@ -42,6 +45,9 @@ function sinrColor(db) {
 let spectrumScene = null;
 
 async function showSpectrum() {
+  // Opened by a link, this can run before the first refresh has resolved a source, so
+  // it asks rather than assuming the dashboard got there first.
+  await ready;  // a source must be resolved; the dashboard need not have succeeded
   const source = state.owner["radio.aggregate_mhz"]
     || state.owner["radio.cc0.mhz"]
     || state.primary;
@@ -98,9 +104,10 @@ async function showSpectrum() {
       <span><span class="dot" style="background:var(--warning)"></span>0–5</span>
       <span><span class="dot" style="background:var(--critical)"></span>below 0</span>
     </div>
-    <div class="note">Each block is one carrier, placed at its true centre frequency and
-      drawn at its real bandwidth. Depth is time — ${filled.length} of ${data.slices.length}
-      slices were recorded over this window.</div>
+    <div class="note" id="spectrum-note"></div>
+    <div class="note" style="margin-top:2px">Blocks narrower than ${MIN_VISIBLE_MHZ} MHz
+      are drawn at that width so they stay visible; their widths relative to each other
+      are true.</div>
     <div class="explain"><h4>What this shows that a signal bar cannot</h4>
       <p>Your router is not on one frequency. It aggregates several carriers at once,
       and the network adds and removes them constantly — during congestion, when you
@@ -110,6 +117,25 @@ async function showSpectrum() {
       carrier's: the router reports one figure for its LTE carriers together and one
       for 5G, so carriers within a leg share a height honestly rather than pretending
       to five separate measurements.</p></div>`;
+
+  // How often the stack actually changed shape — the thing worth knowing, and the
+  // reason to look at this at all.
+  const shapes = filled.map(slice =>
+    slice.carriers.map(c => Math.round(c.mhz)).sort().join(","));
+  const changes = shapes.filter((shape, index) => index && shape !== shapes[index - 1]).length;
+  const widths = filled.map(slice =>
+    slice.carriers.reduce((sum, c) => sum + (c.bw_mhz || 0), 0));
+  const narrowest = Math.min(...widths);
+  const widest = Math.max(...widths);
+  document.getElementById("spectrum-note").innerHTML =
+    `Each block is one carrier at its true centre frequency, drawn at its real
+     bandwidth; depth is time. ${filled.length} of ${data.slices.length} slices
+     recorded. ` + (changes
+      ? `The stack changed <b>${changes}</b> time${changes === 1 ? "" : "s"} here,
+         between ${narrowest} and ${widest} MHz — a ${Math.round(
+           (1 - narrowest / Math.max(widest, 1)) * 100)}% swing in capacity with the
+         signal unchanged.`
+      : `The stack held steady at ${widest} MHz throughout.`);
 
   const canvas = document.getElementById("spectrum-canvas");
   spectrumScene = createScene(canvas);
@@ -121,7 +147,8 @@ async function showSpectrum() {
       : "Drag to orbit · scroll to zoom";
   });
   renderSpectrum(data, filled);
-  requestAnimationFrame(() => spectrumScene && spectrumScene.draw());
+  // Turn once on open: static 3D reads as a flat pattern until it moves.
+  requestAnimationFrame(() => spectrumScene && spectrumScene.introduce());
 }
 
 function renderSpectrum(data, filled) {
@@ -149,11 +176,15 @@ function renderSpectrum(data, filled) {
     const when = fmt.clock(slice.at);
     for (const carrier of slice.carriers) {
       const width = carrier.bw_mhz || 20;
+      // A 20 MHz carrier is 0.7% of the span drawn, which is honest and invisible.
+      // Every block gets the same minimum, so their *relative* widths stay true — a
+      // 100 MHz carrier still draws five times a 20 MHz one wherever both clear it.
+      const half = Math.max(width, MIN_VISIBLE_MHZ) / 2;
       const rsrp = carrier.nr ? signal.nr_rsrp : signal.lte_rsrp;
       const sinr = carrier.nr ? signal.nr_sinr : signal.lte_sinr;
       boxes.push({
-        x0: toX(carrier.mhz - width / 2),
-        x1: toX(carrier.mhz + width / 2),
+        x0: toX(carrier.mhz - half),
+        x1: toX(carrier.mhz + half),
         y0: FLOOR_Y,
         y1: FLOOR_Y + signalHeight(rsrp),
         z0,
@@ -195,6 +226,37 @@ function renderSpectrum(data, filled) {
     });
   });
 
+  // Height ticks at round dBm values, so a bar's height is a quantity you can read
+  // off rather than a shape you compare to its neighbour.
+  const dbmTicks = [-110, -95, -80, -65];
+  for (const dbm of dbmTicks) {
+    labels.push({
+      x: -1.42,
+      y: FLOOR_Y + signalHeight(dbm),
+      z: 0.28,
+      text: `${dbm}`,
+      color: css("--text-3"),
+      size: 10,
+      align: "right",
+    });
+  }
+  labels.push({
+    // Above the topmost tick, not on it — the two overlapped at this camera angle.
+    x: -1.46, y: FLOOR_Y + signalHeight(-48), z: 0.28,
+    text: "dBm", color: css("--text-3"), size: 10, align: "right",
+  });
+
+  // The time axis: only the two ends are labelled. Intermediate stamps on a receding
+  // axis crowd into illegibility long before they become useful.
+  labels.push({
+    x: 1.62, y: FLOOR_Y + 0.06, z: 0.28,
+    text: "now", color: css("--text-2"), size: 10.5, align: "left",
+  });
+  labels.push({
+    x: 1.62, y: FLOOR_Y + 0.06, z: -1.55,
+    text: fmt.hm(filled[0].at), color: css("--text-3"), size: 10.5, align: "left",
+  });
+
   spectrumScene.set(boxes, labels, {
     y: FLOOR_Y,
     x0: -1.35, x1: 1.35, z0: -1.6, z1: 0.3,
@@ -202,7 +264,9 @@ function renderSpectrum(data, filled) {
     // the ones that say where the carriers are.
     xs: [...new Set(newest.carriers.map(c => toX(c.mhz)))],
     zs: [-1.55, -1.1, -0.65, -0.2],
+    ticks: dbmTicks.map(dbm => ({ y: FLOOR_Y + signalHeight(dbm) })),
     grid: css("--grid"),
     edge: css("--border-2"),
-  });
+    now: css("--text-3"),
+  }, css("--panel"));
 }

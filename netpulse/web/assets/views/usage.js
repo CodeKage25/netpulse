@@ -7,6 +7,7 @@
    number that looks authoritative and is not. */
 
 async function showUsage() {
+  await ready;  // a source must be resolved; the dashboard need not have succeeded
   const source = state.owner["data.month_total_bytes"]
     || state.owner["data.month_down_bytes"]
     || state.primary;

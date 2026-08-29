@@ -64,11 +64,12 @@ function parseColor(value) {
 
 /* A scene that owns its canvas, its camera and its pointer handling.
    Callers hand it a list of boxes and it draws them; it knows nothing about radios. */
-function createScene(canvas, { yaw = 0.62, pitch = 0.38, distance = 3.5 } = {}) {
+function createScene(canvas, { yaw = 0.95, pitch = 0.34, distance = 3.3 } = {}) {
   const camera = { yaw, pitch, distance };
   let boxes = [];
   let labels = [];
   let floor = null;
+  let backdrop = null;
   let hover = null;
   let onHover = null;
 
@@ -87,6 +88,16 @@ function createScene(canvas, { yaw = 0.62, pitch = 0.38, distance = 3.5 } = {}) 
     context.clearRect(0, 0, width, height);
     const project = orbit(camera.yaw, camera.pitch, camera.distance);
 
+    // A haze toward the horizon. Two stops of almost nothing, but it separates the
+    // far end of the scene from the near end without drawing a single extra face.
+    if (backdrop) {
+      const wash = context.createLinearGradient(0, 0, 0, height);
+      wash.addColorStop(0, backdrop);
+      wash.addColorStop(1, "transparent");
+      context.fillStyle = wash;
+      context.fillRect(0, 0, width, height);
+    }
+
     // The ground plane first, so the boxes have something to stand on and depth is
     // readable. Without it the bars float and the perspective is guesswork.
     if (floor) {
@@ -103,7 +114,14 @@ function createScene(canvas, { yaw = 0.62, pitch = 0.38, distance = 3.5 } = {}) 
       };
       for (const x of floor.xs) line([x, floor.y, floor.z0], [x, floor.y, floor.z1], floor.grid, 1);
       for (const z of floor.zs) line([floor.x0, floor.y, z], [floor.x1, floor.y, z], floor.grid, 1);
-      line([floor.x0, floor.y, floor.z1], [floor.x1, floor.y, floor.z1], floor.edge, 1.5);
+      // The near edge is "now". Drawn brighter because everything behind it is the
+      // past, and a scene where the present is not obvious is a scene read backwards.
+      line([floor.x0, floor.y, floor.z1], [floor.x1, floor.y, floor.z1], floor.now || floor.edge, 2);
+      line([floor.x0, floor.y, floor.z0], [floor.x1, floor.y, floor.z0], floor.edge, 1);
+      // Height ticks up the left wall, so a bar's height is a quantity and not a mood.
+      for (const tick of floor.ticks || []) {
+        line([floor.x0, tick.y, floor.z0], [floor.x0, tick.y, floor.z1], floor.grid, 1);
+      }
     }
 
     // Every face from every box, sorted far to near. With no intersecting geometry
@@ -206,11 +224,32 @@ function createScene(canvas, { yaw = 0.62, pitch = 0.38, distance = 3.5 } = {}) 
     return hit;
   }
 
+  /* A short turn when the scene first appears. Static 3D reads as a flat pattern until
+     it moves once; a second of rotation is the cheapest way to say "this has depth,
+     and you can turn it". It settles at the starting angle rather than somewhere new,
+     so nothing is left in a position the user did not choose. */
+  function introduce() {
+    const target = camera.yaw;
+    const from = target - 0.55;
+    const started = performance.now();
+    camera.yaw = from;
+    function step(now) {
+      const t = Math.min(1, (now - started) / 900);
+      // Ease out: fast at first, settling rather than stopping dead.
+      camera.yaw = from + (target - from) * (1 - Math.pow(1 - t, 3));
+      draw();
+      if (t < 1) requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
+  }
+
   return {
-    set(nextBoxes, nextLabels = [], nextFloor = null) {
+    introduce,
+    set(nextBoxes, nextLabels = [], nextFloor = null, nextBackdrop = null) {
       boxes = nextBoxes;
       labels = nextLabels;
       floor = nextFloor;
+      backdrop = nextBackdrop;
       draw();
     },
     onHover(handler) { onHover = handler; },
