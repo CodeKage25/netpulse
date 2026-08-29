@@ -168,3 +168,56 @@ def test_nothing_recorded_gives_no_uptime_rather_than_a_perfect_score(
     report = uptime_report(store, "wan", clock.now - timedelta(days=7), clock.now, interval_s=5)
     assert report["uptime"] is None
     assert report["coverage"] == 0.0
+
+
+# ------------------------------------------------------------------ speed test history
+
+
+def api_for(store: Store, clock: Clock):  # type: ignore[no-untyped-def]
+    from netpulse.adapters.fake import ScriptedAdapter
+    from netpulse.api import Api
+    from netpulse.monitor import Collector
+
+    return Api(
+        store,
+        Collector(store, [ScriptedAdapter("wan", [])], clock=clock),
+        interval_s=5,
+        clock=clock,
+    )
+
+
+def test_past_runs_come_back_newest_first(store: Store, clock: Clock) -> None:
+    """Dishylink keeps no speed-test history at all; its result is gone on the next
+    render. Whether the link is getting worse needs the runs kept."""
+    for mbps in (10.0, 20.0, 30.0):
+        store.record(
+            "wan",
+            {"speedtest.down_bytes_s": mbps * 1e6 / 8, "speedtest.up_bytes_s": mbps * 1e5 / 8},
+        )
+        clock.advance(days=1)
+
+    history = api_for(store, clock).speedtest_history("wan", days=30)
+    assert history["count"] == 3
+    assert history["runs"][0]["down_mbps"] == 30.0  # newest first
+    assert history["runs"][0]["up_mbps"] == 3.0
+
+
+def test_a_trend_needs_enough_runs_to_mean_anything(store: Store, clock: Clock) -> None:
+    """Two points are a line through noise, not a direction."""
+    for _ in range(2):
+        store.record("wan", {"speedtest.down_bytes_s": 5e6})
+        clock.advance(days=1)
+    assert api_for(store, clock).speedtest_history("wan", days=30)["trend_pct"] is None
+
+
+def test_a_degrading_link_reports_a_negative_trend(store: Store, clock: Clock) -> None:
+    for mbps in (40.0, 40.0, 20.0, 20.0):
+        store.record("wan", {"speedtest.down_bytes_s": mbps * 1e6 / 8})
+        clock.advance(days=1)
+    assert api_for(store, clock).speedtest_history("wan", days=30)["trend_pct"] == -50.0
+
+
+def test_a_run_with_no_upload_reading_says_so_rather_than_zero(store: Store, clock: Clock) -> None:
+    store.record("wan", {"speedtest.down_bytes_s": 5e6})
+    history = api_for(store, clock).speedtest_history("wan", days=30)
+    assert history["runs"][0]["up_mbps"] is None

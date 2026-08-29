@@ -232,6 +232,36 @@ class Api:
             ],
         }
 
+    def speedtest_history(self, source: str, days: float) -> dict[str, Any]:
+        """Past runs, newest first, with the trend they add up to.
+
+        Dishylink has no speed-test history at all — its result lives in component
+        state and is gone on the next render. A single number tells you what the link
+        did once; the useful question is whether it is getting worse.
+        """
+        now = self._clock()
+        since = now - timedelta(days=days)
+        downs = self.store.stamped(source, "speedtest.down_bytes_s", since)
+        ups = dict(self.store.stamped(source, "speedtest.up_bytes_s", since))
+        runs = [
+            {
+                "at": at.isoformat(),
+                "down_mbps": round(value * 8 / 1e6, 1),
+                "up_mbps": round(ups[at] * 8 / 1e6, 1) if at in ups else None,
+            }
+            for at, value in reversed(downs)
+        ]
+        # A trend needs enough runs to mean something; two points are a line through
+        # noise, not a direction.
+        trend = None
+        if len(downs) >= 4:
+            half = len(downs) // 2
+            older = sum(value for _, value in downs[:half]) / half
+            newer = sum(value for _, value in downs[half:]) / (len(downs) - half)
+            if older > 0:
+                trend = round(100 * (newer - older) / older, 1)
+        return {"runs": runs, "count": len(runs), "trend_pct": trend}
+
     def quality(self, source: str) -> dict[str, Any]:
         graded = assess(self.store, source, self._clock())
         if graded is None:

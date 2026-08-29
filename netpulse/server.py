@@ -102,6 +102,12 @@ def make_handler(api: Api) -> type[BaseHTTPRequestHandler]:
                             f'{"json" if wants_json else "csv"}"'
                         },
                     )
+                elif url.path == "/api/speedtests":
+                    self._json(
+                        api.speedtest_history(
+                            params.get("source", ""), float(params.get("days", "30"))
+                        )
+                    )
                 elif url.path == "/api/quality":
                     self._json(api.quality(params.get("source", "")))
                 elif url.path == "/api/devices":

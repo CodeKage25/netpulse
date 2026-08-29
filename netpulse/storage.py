@@ -394,6 +394,26 @@ class Store:
             return None
         return datetime.fromisoformat(row["first"]), datetime.fromisoformat(row["last"])
 
+    def stamped(
+        self, source: str, metric: str, since: datetime, until: datetime | None = None
+    ) -> list[tuple[datetime, float]]:
+        """Raw readings with their timestamps, oldest first.
+
+        For metrics that are events rather than levels — a speed test happened at a
+        moment, and when it happened is half the reading.
+        """
+        clause = "AND at < ?" if until is not None else ""
+        parameters: tuple[object, ...] = (source, metric, _ts(since))
+        if until is not None:
+            parameters += (_ts(until),)
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT at, value FROM samples WHERE source = ? AND metric = ? "
+                f"AND at >= ? {clause} ORDER BY at",
+                parameters,
+            ).fetchall()
+        return [(datetime.fromisoformat(row["at"]), row["value"]) for row in rows]
+
     def sources(self) -> list[str]:
         with self._lock:
             rows = self._conn.execute(
