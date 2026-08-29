@@ -77,3 +77,27 @@ distribution axis starting at 150ms (the Best hero read off a MAX-bucketed serie
 the best bad minute, not the best reading). Both had passing tests around them.
 **Rule:** render every view and read the actual numbers against each other. Two
 figures on one screen that cannot both be true is the cheapest bug detector there is.
+
+### `cmd; echo $?` is not a gate — it is a report nobody reads
+Twice in one session I ran `pytest -q >/dev/null; echo "pytest=$?"` and then committed
+in the *next* shell invocation, having never looked at the number. A red suite went in
+both times. Piping to `tail` does the same damage: the pipeline's exit code is `tail`'s,
+which is always zero. **Rule:** the verification and the commit go in one `&&` chain —
+`pytest -q && ruff check -q . && git commit` — so a failure physically cannot reach the
+commit. Never `;` between a check and an action.
+
+### A guard that greps prose will flag the comment explaining the guard
+`test_the_query_layer_holds_no_transport` fired on api.py's docstring saying it has no
+sockets. Then `test_the_scene_needs_no_library` fired on scene.js's comment explaining
+why it needs no WebGL. Same bug, twice, a few hours apart. **Rule:** a check about what
+code *does* must read code — parse the imports, or strip comments first. Prose in a
+well-documented file names the thing it is avoiding, so scanning raw text finds exactly
+the files that were most careful.
+
+### A multi-step edit script that asserts must write before it can fail
+A `python - <<PY` block that did `assert old in s` twice and `write_text` once at the end
+lost the whole edit when the second assert failed — including the first, correct
+replacement. It then looked like the edit had been applied, because the *script* printed
+its progress. **Rule:** make edit scripts idempotent (`if X not in s`) and write after
+each successful replacement, or verify the file afterwards rather than trusting the
+script's own output.
