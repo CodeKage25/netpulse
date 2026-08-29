@@ -41,8 +41,14 @@ def build(kind: str, name: str, options: dict[str, Any]) -> Adapter:
         from netpulse.adapters.zlt import ZltAdapter
 
         return ZltAdapter(name, **options)
+    if kind == "snmp":
+        from netpulse.adapters.snmp_router import SnmpAdapter
+
+        return SnmpAdapter(name, **options)
     if kind == "demo":
         from netpulse.adapters.fake import DemoAdapter
 
         return DemoAdapter(name, **options)
-    raise ValueError(f"unknown adapter kind {kind!r}; available: probe, huawei, zte, zlt, demo")
+    raise ValueError(
+        f"unknown adapter kind {kind!r}; available: probe, huawei, zte, zlt, snmp, demo"
+    )
