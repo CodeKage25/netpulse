@@ -17,7 +17,7 @@ ZTE_STATUS = json.dumps({"network_type": "LTE", "ppp_status": "ppp_connected"}).
 
 
 def fetch_for(network: dict[str, dict[str, bytes]]):  # type: ignore[no-untyped-def]
-    def fetch(url: str, headers: dict[str, str]) -> bytes:
+    def fetch(url: str, headers: dict[str, str], body: bytes | None = None) -> bytes:
         for address, routes in network.items():
             if address in url:
                 for path, payload in routes.items():
@@ -127,7 +127,7 @@ def test_an_unidentified_router_page_is_reported_not_hidden() -> None:
     """Discovery saw a router; saying nothing would leave the user thinking it saw none."""
     page = b"<html><head><title>MTN Router</title></head><body>zlt login</body></html>"
 
-    def fetch(url: str, headers: dict[str, str]) -> bytes:
+    def fetch(url: str, headers: dict[str, str], body: bytes | None = None) -> bytes:
         if "192.168.0.1" in url and url.rstrip("/").endswith("192.168.0.1"):
             return page
         raise OSError("no route")

@@ -5,27 +5,29 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>NetPulse</title>
 <style>
-  /* Every asset is inline: this page must render during the outage it explains.
-     The instrument look — near-black ground, raised card surfaces, huge figures with
-     sparklines riding beside them — follows Dishylink's dashboard, which earned it. */
+  /* Every asset is inline: this page must render during the outage it explains. */
   :root, :root[data-theme="dark"] {
     color-scheme: dark;
-    --bg: #0b0b0c; --panel: #151517; --panel-2: #1c1c1f; --border: #26262a;
+    --bg: #0a0a0b; --panel: #141416; --panel-2: #1b1b1e; --raised: #232327;
+    --border: #26262a; --border-2: #313136;
     --text: #f5f5f4; --text-2: #a3a29e; --text-3: #6e6d69;
-    --down: #3987e5; --up: #199e70; --mono: #e8e8e6;
+    --down: #3987e5; --up: #199e70; --mono: #e8e8e6; --accent: #eb6834;
     --good: #0ca30c; --warning: #fab219; --serious: #ec835a; --critical: #d03b3b;
-    --grid: #232326; --band: rgba(208,59,59,0.14); --gapfill: rgba(163,162,158,0.05);
-    --down-fill: rgba(57,135,229,0.22); --up-fill: rgba(25,158,112,0.20);
-    --mono-fill: rgba(232,232,230,0.10);
+    --grid: #212124; --band: rgba(208,59,59,0.16); --gapfill: rgba(163,162,158,0.05);
+    --down-fill: rgba(57,135,229,0.24); --up-fill: rgba(25,158,112,0.22);
+    --mono-fill: rgba(232,232,230,0.11); --accent-fill: rgba(235,104,52,0.20);
+    --shadow: 0 18px 60px rgba(0,0,0,0.62);
   }
   :root[data-theme="light"] {
     color-scheme: light;
-    --bg: #f4f4f2; --panel: #ffffff; --panel-2: #f7f7f5; --border: #e4e3df;
+    --bg: #f4f4f2; --panel: #ffffff; --panel-2: #f7f7f5; --raised: #eeeeeb;
+    --border: #e4e3df; --border-2: #d8d7d2;
     --text: #0b0b0b; --text-2: #52514e; --text-3: #8a8984;
-    --down: #2a78d6; --up: #1baf7a; --mono: #3a3a38;
+    --down: #2a78d6; --up: #1baf7a; --mono: #3a3a38; --accent: #d95926;
     --grid: #ececea; --band: rgba(208,59,59,0.10); --gapfill: rgba(82,81,78,0.05);
-    --down-fill: rgba(42,120,214,0.14); --up-fill: rgba(27,175,122,0.14);
-    --mono-fill: rgba(58,58,56,0.08);
+    --down-fill: rgba(42,120,214,0.15); --up-fill: rgba(27,175,122,0.15);
+    --mono-fill: rgba(58,58,56,0.09); --accent-fill: rgba(217,89,38,0.15);
+    --shadow: 0 18px 50px rgba(0,0,0,0.18);
   }
   * { box-sizing: border-box; }
   html { background: var(--bg); }
@@ -33,130 +35,164 @@
     margin: 0; background: var(--bg); color: var(--text); min-height: 100vh;
     font: 13.5px/1.45 -apple-system, "Segoe UI", "Inter", system-ui, sans-serif;
   }
-  .shell { max-width: 1280px; margin: 0 auto; padding: 0 20px 60px; }
-  header { display: flex; align-items: center; gap: 12px; padding: 20px 2px 18px; }
-  header .brand { display: flex; align-items: center; gap: 9px; font-weight: 700;
+  .shell { max-width: 1320px; margin: 0 auto; padding: 0 20px 70px; }
+
+  /* ------------------------------------------------ header */
+  header { display: flex; align-items: center; gap: 12px; padding: 20px 2px 16px; }
+  .brand { display: flex; align-items: center; gap: 9px; font-weight: 700;
     font-size: 15px; letter-spacing: 0.06em; }
-  .pulse-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--good);
-    box-shadow: 0 0 8px var(--good); }
-  .pulse-dot.down { background: var(--critical); box-shadow: 0 0 8px var(--critical); }
-  header .meta { color: var(--text-2); font-size: 12.5px; display: flex; gap: 8px;
+  .pulse-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--good);
+    box-shadow: 0 0 9px var(--good); flex: none; }
+  .pulse-dot.down { background: var(--critical); box-shadow: 0 0 9px var(--critical); }
+  .meta { color: var(--text-2); font-size: 12.5px; display: flex; gap: 7px;
     align-items: center; flex-wrap: wrap; }
-  header .meta b { color: var(--text); font-weight: 600; }
-  .tag { border: 1px solid var(--border); border-radius: 6px; padding: 1px 7px;
-    font-size: 11px; color: var(--text-2); letter-spacing: 0.04em; }
-  .spacer { flex: 1; }
-  .iconbtn {
+  .meta b { color: var(--text); font-weight: 600; }
+  .tag { border: 1px solid var(--border-2); border-radius: 6px; padding: 1px 7px;
+    font-size: 11px; color: var(--text-2); letter-spacing: 0.03em; }
+  .btn {
     background: var(--panel); border: 1px solid var(--border); color: var(--text-2);
-    border-radius: 8px; padding: 6px 11px; font: inherit; font-size: 12.5px; cursor: pointer;
-    transition: color 0.15s, border-color 0.15s;
+    border-radius: 9px; padding: 6px 12px; font: inherit; font-size: 12.5px;
+    cursor: pointer; transition: color .15s, border-color .15s, background .15s;
   }
-  .iconbtn:hover { color: var(--text); border-color: var(--text-3); }
-  .iconbtn:disabled { opacity: 0.5; cursor: wait; }
+  .btn:hover { color: var(--text); border-color: var(--border-2); background: var(--panel-2); }
+  .btn:disabled { opacity: .5; cursor: wait; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn.primary:hover { background: var(--accent); filter: brightness(1.08); color: #fff; }
+
+  /* ------------------------------------------------ notice banner */
+  .notice {
+    display: flex; gap: 13px; align-items: center; background: var(--panel);
+    border: 1px solid var(--border); border-left: 3px solid var(--accent);
+    border-radius: 12px; padding: 13px 16px; margin-bottom: 16px;
+  }
+  .notice h3 { margin: 0 0 2px; font-size: 13px; font-weight: 650; }
+  .notice p { margin: 0; color: var(--text-2); font-size: 12.5px; max-width: 76ch; }
+  .notice code { background: var(--raised); border-radius: 5px; padding: 1px 6px;
+    font-size: 11.5px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 
   /* ------------------------------------------------ stat tiles */
-  .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(196px, 1fr));
-    gap: 12px; margin-bottom: 18px; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 12px; margin-bottom: 16px; }
   .tile {
-    background: var(--panel); border: 1px solid var(--border); border-radius: 13px;
-    padding: 13px 15px 11px; min-height: 96px; display: flex; flex-direction: column;
+    position: relative; background: var(--panel); border: 1px solid var(--border);
+    border-radius: 14px; padding: 13px 15px 11px; min-height: 100px;
+    display: flex; flex-direction: column; text-align: left; font: inherit;
+    color: inherit; cursor: pointer; transition: border-color .15s, transform .15s;
   }
+  .tile:hover { border-color: var(--border-2); transform: translateY(-1px); }
   .tile .label { font-size: 11px; color: var(--text-2); text-transform: uppercase;
-    letter-spacing: 0.08em; font-weight: 600; }
+    letter-spacing: .08em; font-weight: 600; }
+  .tile .chev { position: absolute; top: 12px; right: 13px; color: var(--text-3);
+    font-size: 14px; line-height: 1; }
+  .tile:hover .chev { color: var(--text); }
   .tile .row { display: flex; align-items: center; gap: 8px; margin-top: 5px; }
-  .tile .value { font-size: 29px; font-weight: 700; letter-spacing: -0.01em;
-    font-variant-numeric: tabular-nums; line-height: 1.05; white-space: nowrap; }
+  .tile .value { font-size: 30px; font-weight: 700; letter-spacing: -.015em;
+    font-variant-numeric: tabular-nums; line-height: 1.04; white-space: nowrap; }
   .tile .unit { font-size: 12px; font-weight: 500; color: var(--text-2); margin-left: 4px; }
-  .tile .spark { flex: 1; min-width: 34px; height: 34px; }
+  .tile .spark { flex: 1; min-width: 30px; height: 34px; }
   .tile .spark svg { width: 100%; height: 100%; display: block; }
   .tile .caption { font-size: 11px; color: var(--text-3); margin-top: auto; padding-top: 5px; }
 
   /* ------------------------------------------------ layout */
-  .cols { display: grid; grid-template-columns: 1fr 380px; gap: 14px; align-items: start; }
-  @media (max-width: 1020px) { .cols { grid-template-columns: 1fr; } }
-  .panel {
-    background: var(--panel); border: 1px solid var(--border); border-radius: 13px;
-    padding: 15px 17px 13px; margin-bottom: 14px;
-  }
-  .panel-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px;
+  .cols { display: grid; grid-template-columns: 1fr 372px; gap: 14px; align-items: start; }
+  @media (max-width: 1040px) { .cols { grid-template-columns: 1fr; } }
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
+    padding: 15px 17px 13px; margin-bottom: 14px; }
+  .panel-head { display: flex; align-items: center; gap: 10px; margin-bottom: 6px;
     flex-wrap: wrap; }
   .panel-head h2 { font-size: 13.5px; margin: 0; font-weight: 650; }
-  .panel-head .hint { color: var(--text-3); font-size: 11px; }
+  .hint { color: var(--text-3); font-size: 11px; }
   .seg { display: flex; background: var(--panel-2); border: 1px solid var(--border);
-    border-radius: 8px; padding: 2px; margin-left: auto; }
+    border-radius: 9px; padding: 2px; margin-left: auto; }
   .seg button { border: 0; background: transparent; color: var(--text-3); font: inherit;
-    font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: 6px; cursor: pointer; }
-  .seg button.on { background: var(--panel); color: var(--text);
-    box-shadow: 0 1px 4px rgba(0,0,0,0.35); }
-  .legend { display: flex; gap: 14px; font-size: 11.5px; color: var(--text-2); margin: 2px 0 0; }
+    font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: 7px; cursor: pointer; }
+  .seg button.on { background: var(--raised); color: var(--text); }
+  .legend { display: flex; gap: 14px; font-size: 11.5px; color: var(--text-2); }
   .legend .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%;
     margin-right: 5px; vertical-align: -1px; }
-  .chart { position: relative; margin-top: 6px; padding-left: 34px; padding-bottom: 14px; }
+
+  /* ------------------------------------------------ charts */
+  .chart { position: relative; margin-top: 6px; padding: 0 0 15px 36px; }
   .chart svg.plot { display: block; width: 100%; }
-  .ylab { position: absolute; left: 0; width: 28px; text-align: right; font-size: 10.5px;
+  .ylab { position: absolute; left: 0; width: 30px; text-align: right; font-size: 10.5px;
     color: var(--text-3); transform: translateY(-50%); pointer-events: none;
     font-variant-numeric: tabular-nums; }
   .xlab { position: absolute; bottom: 0; font-size: 10.5px; color: var(--text-3);
-    transform: translateX(-50%); pointer-events: none; font-variant-numeric: tabular-nums; }
-  .note { font-size: 11px; color: var(--text-3); margin-top: 4px; }
-  .tooltip { position: absolute; pointer-events: none; background: var(--panel-2);
-    border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px; font-size: 12px;
-    box-shadow: 0 4px 18px rgba(0,0,0,0.45); display: none; white-space: nowrap; z-index: 5; }
+    pointer-events: none; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .note { font-size: 11px; color: var(--text-3); }
+  .tooltip { position: absolute; pointer-events: none; background: var(--raised);
+    border: 1px solid var(--border-2); border-radius: 9px; padding: 7px 10px;
+    font-size: 12px; box-shadow: var(--shadow); display: none; white-space: nowrap; z-index: 5; }
   .tooltip .t { color: var(--text-3); font-size: 10.5px; margin-bottom: 2px; }
 
   /* ------------------------------------------------ right column */
   .grade-row { display: flex; align-items: center; gap: 16px; }
-  .grade { font-size: 46px; font-weight: 800; line-height: 1; }
+  .grade { font-size: 48px; font-weight: 800; line-height: 1; letter-spacing: -.02em; }
   .grade.A { color: var(--good); } .grade.B { color: var(--up); }
   .grade.C { color: var(--warning); } .grade.D { color: var(--serious); }
   .grade.F { color: var(--critical); }
-  .grade-detail { font-size: 11.5px; color: var(--text-2); line-height: 1.7; }
+  .grade-detail { font-size: 11.5px; color: var(--text-2); line-height: 1.75; }
   .grade-detail b { color: var(--text); font-variant-numeric: tabular-nums; }
-  .kv { display: grid; grid-template-columns: auto 1fr; gap: 3px 14px; font-size: 12.5px; }
+  .kv { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; font-size: 12.5px; }
   .kv .k { color: var(--text-3); }
   .kv .v { color: var(--text); font-weight: 600; text-align: right;
     font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; }
-  .event { display: flex; gap: 9px; align-items: baseline; padding: 7px 0;
+  .row-item { display: flex; gap: 9px; align-items: baseline; padding: 8px 0;
     border-top: 1px solid var(--border); font-size: 12px; }
-  .event:first-of-type { border-top: 0; }
-  .event .when { color: var(--text-3); font-variant-numeric: tabular-nums;
-    font-size: 11px; min-width: 74px; }
+  .row-item:first-of-type { border-top: 0; }
+  .when { color: var(--text-3); font-variant-numeric: tabular-nums; font-size: 11px; }
   .sev { width: 8px; height: 8px; border-radius: 50%; flex: none; align-self: center; }
   .sev.critical { background: var(--critical); } .sev.warning { background: var(--serious); }
   .sev.info { background: var(--text-3); }
-  .event .dur { margin-left: auto; color: var(--text-3); font-size: 11px;
+  .dur { margin-left: auto; color: var(--text-3); font-size: 11px;
     font-variant-numeric: tabular-nums; }
-  .event .live { margin-left: auto; color: var(--critical); font-size: 11px; font-weight: 700; }
-  .insight { display: flex; gap: 10px; padding: 8px 0; border-top: 1px solid var(--border); }
+  .live { margin-left: auto; color: var(--critical); font-size: 11px; font-weight: 700; }
+  .insight { display: flex; gap: 10px; padding: 9px 0; border-top: 1px solid var(--border); }
   .insight:first-of-type { border-top: 0; }
   .insight .bar { width: 3px; border-radius: 2px; flex: none; }
   .insight .title { font-weight: 650; font-size: 12.5px; }
   .insight .detail { color: var(--text-2); font-size: 12px; margin-top: 2px; }
-  .device { display: flex; gap: 10px; align-items: baseline; padding: 7px 0;
-    border-top: 1px solid var(--border); font-size: 12px; }
-  .device:first-of-type { border-top: 0; }
-  .device .name { font-weight: 600; }
-  .device .meta { color: var(--text-3); font-size: 11px; font-variant-numeric: tabular-nums; }
   .empty { color: var(--text-3); font-size: 12px; padding: 6px 0; }
 
-  /* ------------------------------------------------ settings drawer */
-  .drawer-back { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 20; }
-  .drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(400px, 92vw);
+  /* ------------------------------------------------ modal + drawer */
+  .scrim { position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 20;
+    backdrop-filter: blur(2px); }
+  .modal {
+    position: fixed; top: 4vh; left: 50%; transform: translateX(-50%);
+    width: min(760px, 94vw); max-height: 92vh; overflow-y: auto; z-index: 21;
+    background: var(--panel); border: 1px solid var(--border-2); border-radius: 18px;
+    padding: 22px 26px 26px; box-shadow: var(--shadow);
+  }
+  .modal h2 { margin: 0; font-size: 19px; font-weight: 700; letter-spacing: -.01em; }
+  .modal-head { display: flex; align-items: flex-start; gap: 12px; }
+  .close { margin-left: auto; width: 30px; height: 30px; border-radius: 50%;
+    border: 1px solid var(--border); background: var(--panel-2); color: var(--text-2);
+    font-size: 15px; line-height: 1; cursor: pointer; flex: none; }
+  .close:hover { color: var(--text); }
+  .heroes { display: flex; gap: 0; margin: 18px 0 14px; }
+  .hero { padding-right: 24px; margin-right: 24px; border-right: 1px solid var(--border); }
+  .hero:last-child { border-right: 0; }
+  .hero .n { font-size: 32px; font-weight: 700; letter-spacing: -.02em;
+    font-variant-numeric: tabular-nums; line-height: 1.05; }
+  .hero .n span { font-size: 13px; font-weight: 500; color: var(--text-2); margin-left: 3px; }
+  .hero .l { font-size: 11.5px; color: var(--text-2); margin-top: 3px; }
+  .explain { background: var(--panel-2); border: 1px solid var(--border);
+    border-radius: 12px; padding: 14px 16px; margin-top: 16px; }
+  .explain h4 { margin: 0 0 5px; font-size: 13px; font-weight: 650; }
+  .explain p { margin: 0; color: var(--text-2); font-size: 12.5px; line-height: 1.62; }
+  .sub-h { font-size: 13px; font-weight: 650; margin: 20px 0 1px; }
+  .sub-p { color: var(--text-3); font-size: 11.5px; margin-bottom: 4px; }
+  .drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(420px, 93vw);
     background: var(--panel); border-left: 1px solid var(--border); z-index: 21;
-    padding: 20px; overflow-y: auto; }
-  .drawer h2 { font-size: 15px; margin: 0 0 4px; }
-  .drawer .sub { color: var(--text-2); font-size: 12px; margin-bottom: 16px; }
-  .srcrow { display: flex; align-items: center; gap: 10px; padding: 9px 0;
+    padding: 22px; overflow-y: auto; box-shadow: var(--shadow); }
+  .srcrow { display: flex; align-items: center; gap: 10px; padding: 10px 0;
     border-top: 1px solid var(--border); font-size: 12.5px; }
   .srcrow:first-of-type { border-top: 0; }
-  .srcrow .k { color: var(--text-3); font-size: 11px; }
-  .found { background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px;
-    padding: 10px 12px; margin-top: 10px; display: flex; align-items: center; gap: 10px;
+  .found { background: var(--panel-2); border: 1px solid var(--border); border-radius: 11px;
+    padding: 11px 13px; margin-top: 10px; display: flex; align-items: center; gap: 10px;
     font-size: 12.5px; }
-  select {
-    font: inherit; background: var(--panel); color: var(--text);
-    border: 1px solid var(--border); border-radius: 8px; padding: 5px 9px; font-size: 12.5px;
-  }
+  select { font: inherit; background: var(--panel); color: var(--text);
+    border: 1px solid var(--border); border-radius: 9px; padding: 5px 9px; font-size: 12.5px; }
 </style>
 </head>
 <body>
@@ -164,17 +200,17 @@
   <header>
     <div class="brand"><span class="pulse-dot" id="dot"></span>NetPulse</div>
     <div class="meta" id="headmeta"></div>
-    <div class="spacer"></div>
-    <button class="iconbtn" id="speedtest" title="Moves ~30 MB of real data">Speed test</button>
-    <select id="source" hidden></select>
-    <button class="iconbtn" id="theme" title="Theme">◐</button>
-    <button class="iconbtn" id="settings" title="Sources">⚙</button>
+    <div style="flex:1"></div>
+    <button class="btn" id="speedtest" title="Moves ~30 MB of real data">Speed test</button>
+    <button class="btn" id="theme" title="Theme">◐</button>
+    <button class="btn" id="settings" title="Sources">⚙</button>
   </header>
 
+  <div id="notices"></div>
   <div class="tiles" id="tiles"></div>
 
   <div class="cols">
-    <div><!-- ------------------------------- left: charts -->
+    <div>
       <div class="panel">
         <div class="panel-head">
           <h2>Throughput</h2>
@@ -189,8 +225,7 @@
 
       <div class="panel">
         <div class="panel-head">
-          <h2>Latency</h2>
-          <span class="hint">worst per bucket · red bands = outages</span>
+          <h2>Latency</h2><span class="hint">worst per bucket · red bands = outages</span>
           <div class="seg"></div>
         </div>
         <div class="chart" id="latency"></div>
@@ -199,44 +234,34 @@
 
       <div class="panel" id="signal-panel" hidden>
         <div class="panel-head">
-          <h2>Signal</h2>
-          <span class="hint">read at the router</span>
+          <h2>Signal</h2><span class="hint">read at the router</span>
           <div class="seg"></div>
         </div>
+        <div class="legend" id="signal-legend" style="margin-bottom:2px"></div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px">
-          <div>
-            <div class="legend"><span><span class="dot" style="background:var(--mono)"></span>RSRP · dBm</span></div>
-            <div class="chart" id="rsrp"></div>
-          </div>
-          <div>
-            <div class="legend"><span><span class="dot" style="background:var(--mono)"></span>SINR · dB</span></div>
-            <div class="chart" id="sinr"></div>
-          </div>
+          <div><div class="hint">RSRP · dBm — strength</div><div class="chart" id="rsrp"></div></div>
+          <div><div class="hint">SINR · dB — cleanliness</div><div class="chart" id="sinr"></div></div>
         </div>
       </div>
     </div>
 
-    <div><!-- ------------------------------- right: instruments -->
+    <div>
       <div class="panel">
         <div class="panel-head"><h2>Connection quality</h2><span class="hint">last hour</span></div>
         <div id="quality"><div class="empty">Measuring — a fair grade needs a little history.</div></div>
       </div>
-
       <div class="panel">
         <div class="panel-head"><h2>Connection</h2></div>
         <div class="kv" id="facts"></div>
       </div>
-
       <div class="panel">
         <div class="panel-head"><h2>Diagnosis</h2></div>
         <div id="insights"><div class="empty">Gathering evidence…</div></div>
       </div>
-
       <div class="panel">
         <div class="panel-head"><h2>Events &amp; outages</h2><span class="hint" id="evcount"></span></div>
         <div id="events"><div class="empty">No outages recorded.</div></div>
       </div>
-
       <div class="panel" id="devices-panel" hidden>
         <div class="panel-head"><h2>Devices</h2><span class="hint" id="devcount"></span></div>
         <div id="devices"></div>
@@ -245,15 +270,21 @@
   </div>
 </div>
 
+<div id="modal-root" hidden>
+  <div class="scrim" data-dismiss></div>
+  <div class="modal" id="modal"></div>
+</div>
+
 <div id="drawer-root" hidden>
-  <div class="drawer-back" id="drawer-back"></div>
+  <div class="scrim" data-dismiss></div>
   <div class="drawer">
-    <h2>Sources</h2>
-    <div class="sub">What NetPulse is watching. The probe measures the connection this
-      machine is on; a router adapter reads signal, data and devices from the box itself.</div>
+    <h2 style="font-size:16px;margin:0 0 4px">Sources</h2>
+    <p style="color:var(--text-2);font-size:12.5px;margin:0 0 16px">
+      What NetPulse is watching. The probe measures the connection this machine is on;
+      a router adapter reads signal, data and devices from the box itself.</p>
     <div id="srclist"></div>
-    <div style="margin-top:18px">
-      <button class="iconbtn" id="scan">Scan for routers</button>
+    <div style="margin-top:18px;display:flex;align-items:center;gap:10px">
+      <button class="btn primary" id="scan">Scan for routers</button>
       <span id="scanstate" style="font-size:11.5px;color:var(--text-3)"></span>
     </div>
     <div id="scanresults"></div>
@@ -263,18 +294,35 @@
 <script>
 "use strict";
 const RANGES = [["15m", 15], ["1h", 60], ["6h", 360], ["24h", 1440], ["7d", 10080]];
-const state = { source: null, minutes: 15 };
+const state = { owner: {}, primary: null, minutes: 60, detail: null, detailMinutes: 60 };
+
+/* A router and a probe measure different halves of the same connection: the router
+   knows signal, bands and data, and cannot see past its own WAN port; the probe knows
+   what the internet actually feels like, and knows nothing about the radio. Making
+   someone choose between them is what left the page looking empty, so each metric is
+   resolved to whichever source actually reports it and the dashboard shows one
+   connection rather than two partial ones. */
+function resolveOwners(overview) {
+  const owner = {};
+  for (const source of overview.sources)
+    for (const metric of Object.keys(source.latest))
+      // First writer wins, and sources arrive router-first, so the router keeps the
+      // radio metrics; latency and loss only ever come from the probe anyway.
+      if (!(metric in owner)) owner[metric] = source.name;
+  return owner;
+}
 
 const fmt = {
   ms: v => v == null ? "–" : v >= 1000 ? (v / 1000).toFixed(1) + "s" : Math.round(v) + "ms",
-  mbps: v => v == null ? "–" : (v * 8 / 1e6) >= 100 ? Math.round(v * 8 / 1e6) : (v * 8 / 1e6).toFixed(1),
+  mbps: v => v == null ? "–" : (v * 8 / 1e6) >= 100 ? String(Math.round(v * 8 / 1e6)) : (v * 8 / 1e6).toFixed(1),
   bytes: v => {
     if (v == null) return "–";
     const units = ["B", "KB", "MB", "GB", "TB"]; let i = 0;
     while (v >= 1000 && i < units.length - 1) { v /= 1000; i++; }
     return v.toFixed(v >= 100 ? 0 : 1) + " " + units[i];
   },
-  axis: v => Math.abs(v) >= 1000 ? (v / 1000).toFixed(0) + "k" : Math.abs(v) >= 10 ? Math.round(v) : (Math.round(v * 10) / 10),
+  axis: v => Math.abs(v) >= 1000 ? (v / 1000).toFixed(0) + "k"
+    : Math.abs(v) >= 10 ? String(Math.round(v)) : String(Math.round(v * 10) / 10),
   when: iso => new Date(iso).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }),
   hm: iso => new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false }),
   clock: iso => new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
@@ -282,11 +330,92 @@ const fmt = {
 const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 async function json(url, opts) { const r = await fetch(url, opts); if (!r.ok) throw new Error(url); return r.json(); }
 
-/* ============================== charts ==============================
-   Dishylink-style area charts: a 2px line over a soft gradient fill anchored to the
-   baseline, honest gaps (a null breaks line and fill both), outage bands, HTML axis
-   labels (SVG text would be squashed by the non-uniform scaling), crosshair tooltip. */
+/* ==========================================================================
+   One spec per metric drives the tile, the chart and the detail view, so a
+   new metric is a row here rather than three places to keep in agreement.
+   ========================================================================== */
+const METRICS = {
+  "traffic.down_bytes_s": {
+    label: "Download", unit: "Mbps", color: "--down", fill: "--down-fill",
+    tile: m => fmt.mbps(m), caption: "current traffic",
+    toChart: v => v * 8 / 1e6, chartFmt: v => v.toFixed(1) + " Mbps", axisFmt: fmt.axis,
+    explain: ["What is throughput?",
+      "How much data is crossing the link right now, read from the router's own counters " +
+      "every few seconds. It measures what your devices are actually using, not how fast " +
+      "the connection could go — an idle link reads near zero however fast it is. For " +
+      "capacity, run a speed test."],
+  },
+  "traffic.up_bytes_s": {
+    label: "Upload", unit: "Mbps", color: "--up", fill: "--up-fill",
+    tile: m => fmt.mbps(m), caption: "current traffic",
+    toChart: v => v * 8 / 1e6, chartFmt: v => v.toFixed(1) + " Mbps", axisFmt: fmt.axis,
+    explain: ["What is upload?",
+      "Data leaving your network — video calls, backups, sending photos. It is usually a " +
+      "fraction of download capacity on mobile networks, and it is what suffers first when " +
+      "a cell is congested."],
+  },
+  "latency.internet_ms": {
+    label: "Latency", unit: "ms", color: "--mono", fill: "--mono-fill",
+    tile: m => Math.round(m), caption: "to the internet, live",
+    chartFmt: fmt.ms, axisFmt: v => Math.round(v), floor: 0,
+    explain: ["What is latency?",
+      "How long a small packet takes to reach the internet and come back. Video calls and " +
+      "games feel the spikes far more than the average, so the chart keeps the worst value " +
+      "in each bucket rather than smoothing it away — a spike averaged into a minute would " +
+      "read as perfectly fine."],
+  },
+  "signal.rsrp_dbm": {
+    label: "Signal", unit: "dBm", color: "--mono", fill: "--mono-fill",
+    tile: m => Math.round(m), caption: "RSRP at the router",
+    chartFmt: v => v.toFixed(1) + " dBm", axisFmt: v => Math.round(v), floor: -120,
+    explain: ["What is RSRP?",
+      "The raw strength of the tower's signal reaching your router, in dBm — a negative " +
+      "number where closer to zero is stronger. Better than −90 is strong, −90 to −105 is " +
+      "usable, below −110 will drop. Moving the router near a window, or higher, usually " +
+      "moves this number more than anything else you can do."],
+  },
+  "signal.sinr_db": {
+    label: "Quality", unit: "dB", color: "--accent", fill: "--accent-fill",
+    tile: m => m.toFixed(0), caption: "SINR — higher is cleaner",
+    chartFmt: v => v.toFixed(1) + " dB", axisFmt: v => Math.round(v), floor: -5,
+    explain: ["What is SINR?",
+      "How clean the signal is against noise and neighbouring cells. Strength without " +
+      "quality still gives you a slow connection, which is why a full-bars router can " +
+      "crawl at busy hours. Above 20 dB is excellent, 13–20 good, below 5 dB is where " +
+      "throughput collapses even on a strong signal."],
+  },
+  "signal.rsrp_5g_dbm": {
+    label: "5G signal", unit: "dBm", color: "--down", fill: "--down-fill",
+    tile: m => Math.round(m), caption: "RSRP on the 5G carrier",
+    chartFmt: v => v.toFixed(1) + " dBm", axisFmt: v => Math.round(v), floor: -120,
+    explain: ["What is the 5G carrier?",
+      "On 5G non-standalone your router holds an LTE anchor and a 5G carrier at the " +
+      "same time, and the 5G leg does most of the carrying. Its strength can differ " +
+      "sharply from the anchor's, which is why both are tracked separately — a strong " +
+      "anchor with a weak 5G leg still feels slow."],
+  },
+  "signal.sinr_5g_db": {
+    label: "5G quality", unit: "dB", color: "--accent", fill: "--accent-fill",
+    tile: m => m.toFixed(0), caption: "SINR on the 5G carrier",
+    chartFmt: v => v.toFixed(1) + " dB", axisFmt: v => Math.round(v), floor: -5,
+    explain: ["Why does 5G quality matter more than strength?",
+      "The 5G carrier uses wide channels at high frequency, where interference costs " +
+      "more than distance. A low SINR here collapses throughput even while the signal " +
+      "bars stay full, and it is the usual explanation for a fast connection that " +
+      "crawls at busy hours."],
+  },
+  "loss.pct": {
+    label: "Ping success", unit: "%", color: "--good", fill: "--mono-fill",
+    tile: m => (100 - m).toFixed(0), caption: "last probe round",
+    chartFmt: v => v.toFixed(1) + "% lost", axisFmt: v => Math.round(v), floor: 0,
+    explain: ["What is packet loss?",
+      "The share of test packets that never came back. Steady loss above about 2% breaks " +
+      "calls and stalls downloads even when latency looks fine, because every lost packet " +
+      "has to be noticed and sent again."],
+  },
+};
 
+/* ============================== charts ============================== */
 function runs(points) {
   const out = []; let current = null;
   points.forEach((v, i) => {
@@ -299,24 +428,25 @@ function runs(points) {
 
 function chart(el, seriesList, opts) {
   const { times, bands = [], format = fmt.axis, tip = fmt.ms, height = 190, floor = null } = opts;
-  const W = 1000, H = height, pad = { l: 6, r: 6, t: 12, b: 8 };
+  const W = 1000, H = height, pad = { l: 4, r: 4, t: 12, b: 8 };
   const n = Math.max(1, times.length - 1);
   const all = seriesList.flatMap(s => s.points).filter(v => v != null);
   const dataHi = all.length ? Math.max(...all) : 1;
   const dataLo = all.length ? Math.min(...all) : 0;
   const lo = floor != null ? Math.min(floor, dataLo) : (dataLo >= 0 ? 0 : dataLo * 1.08);
-  const top = dataHi + (dataHi - lo) * 0.10 || 1;
+  const top = dataHi + (dataHi - lo) * 0.12 || 1;
   const x = i => pad.l + (i / n) * (W - pad.l - pad.r);
   const y = v => pad.t + (1 - (v - lo) / (top - lo)) * (H - pad.t - pad.b);
   const baseline = H - pad.b;
 
   let svg = `<svg class="plot" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="height:${H}px">`;
-  for (const [a, b] of bands) {
+  for (const [a, b] of bands)
     svg += `<rect x="${x(a).toFixed(1)}" y="${pad.t}" width="${Math.max(3, x(b) - x(a)).toFixed(1)}" height="${H - pad.t - pad.b}" fill="var(--band)"/>`;
-  }
-  (seriesList[0]?.points || []).forEach((v, i) => {
-    if (v == null) svg += `<rect x="${x(Math.max(0, i - 0.5)).toFixed(1)}" y="${pad.t}" width="${((W - pad.l - pad.r) / n).toFixed(1)}" height="${H - pad.t - pad.b}" fill="var(--gapfill)"/>`;
-  });
+  // A bucket nobody recorded is shaded: the gap is the finding, not an inconvenience
+  // to be smoothed over. Every series must be silent for it to count as one.
+  for (let i = 0; i < times.length; i++)
+    if (seriesList.every(series => series.points[i] == null))
+      svg += `<rect x="${x(Math.max(0, i - 0.5)).toFixed(1)}" y="${pad.t}" width="${((W - pad.l - pad.r) / n).toFixed(1)}" height="${H - pad.t - pad.b}" fill="var(--gapfill)"/>`;
   let ylabs = "";
   for (let g = 0; g <= 3; g++) {
     const value = lo + ((top - lo) * g) / 3, yy = y(value);
@@ -326,8 +456,7 @@ function chart(el, seriesList, opts) {
   for (const s of seriesList) {
     for (const run of runs(s.points)) {
       if (run.length === 1) {
-        const i = run[0];
-        svg += `<circle cx="${x(i).toFixed(1)}" cy="${y(s.points[i]).toFixed(1)}" r="2.5" fill="${s.color}"/>`;
+        svg += `<circle cx="${x(run[0]).toFixed(1)}" cy="${y(s.points[run[0]]).toFixed(1)}" r="2.5" fill="${s.color}"/>`;
         continue;
       }
       let line = "", area = `M${x(run[0]).toFixed(1)} ${baseline.toFixed(1)}`;
@@ -340,47 +469,66 @@ function chart(el, seriesList, opts) {
       svg += `<path d="${line}" fill="none" stroke="${s.color}" stroke-width="2" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`;
     }
   }
-  svg += `<line id="cross" y1="${pad.t}" y2="${H - pad.b}" stroke="var(--text-3)" stroke-width="1" opacity="0"/>`;
-  svg += `</svg>`;
+  svg += `<line class="cross" y1="${pad.t}" y2="${H - pad.b}" stroke="var(--text-3)" stroke-width="1" opacity="0"/></svg>`;
 
   let xlabs = "";
   const ticks = Math.min(5, times.length);
   for (let t = 0; t < ticks; t++) {
     const i = Math.round((t / Math.max(1, ticks - 1)) * (times.length - 1));
-    // Edge labels clamp inward instead of centring, so the first cannot run under the
-    // y-axis column and the last cannot spill past the plot.
-    const shift = t === 0 ? "0%" : t === ticks - 1 ? "-100%" : "-50%";
+    // Edge labels clamp inward so the first cannot sit under the y-axis column
+    // and the last cannot spill past the plot.
+    const shift = t === 0 ? "0" : t === ticks - 1 ? "-100%" : "-50%";
     if (times[i]) xlabs += `<span class="xlab" data-frac="${(x(i) / W).toFixed(4)}" style="transform:translateX(${shift})">${fmt.hm(times[i])}</span>`;
   }
 
   el.innerHTML = svg + ylabs + xlabs + `<div class="tooltip"></div>`;
+  const node = el.querySelector("svg.plot");
   const place = () => {
-    const plot = el.querySelector("svg.plot").getBoundingClientRect();
-    const box = el.getBoundingClientRect();
-    for (const lab of el.querySelectorAll(".xlab")) {
-      const frac = Number(lab.dataset.frac);
-      lab.style.left = (plot.left - box.left + frac * plot.width) + "px";
-    }
+    const plot = node.getBoundingClientRect(), box = el.getBoundingClientRect();
+    for (const lab of el.querySelectorAll(".xlab"))
+      lab.style.left = (plot.left - box.left + Number(lab.dataset.frac) * plot.width) + "px";
   };
   place();
+  requestAnimationFrame(place);
 
-  const node = el.querySelector("svg"), tt = el.querySelector(".tooltip"), cross = el.querySelector("#cross");
+  const tt = el.querySelector(".tooltip"), cross = el.querySelector(".cross");
   node.addEventListener("mousemove", event => {
     const rect = node.getBoundingClientRect();
-    const fx = (event.clientX - rect.left) / rect.width * W;
-    const i = Math.round(((fx - pad.l) / (W - pad.l - pad.r)) * n);
+    const i = Math.round((((event.clientX - rect.left) / rect.width * W) - pad.l) / (W - pad.l - pad.r) * n);
     if (i < 0 || i >= times.length) { tt.style.display = "none"; cross.setAttribute("opacity", 0); return; }
-    cross.setAttribute("x1", x(i)); cross.setAttribute("x2", x(i)); cross.setAttribute("opacity", 0.45);
+    cross.setAttribute("x1", x(i)); cross.setAttribute("x2", x(i)); cross.setAttribute("opacity", .45);
     tt.innerHTML = `<div class="t">${fmt.clock(times[i])}</div>` + seriesList.map(s => {
       const v = s.points[i];
       return `<div><span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${s.color};margin-right:6px"></span>${s.name}: <b>${v == null ? "no data" : tip(v)}</b></div>`;
     }).join("");
     tt.style.display = "block";
-    const px = (x(i) / W) * rect.width;
-    tt.style.left = Math.min(rect.width - tt.offsetWidth - 6, Math.max(6, px + 14)) + "px";
+    tt.style.left = Math.min(rect.width - tt.offsetWidth - 6, Math.max(6, (x(i) / W) * rect.width + 14)) + "px";
     tt.style.top = "8px";
   });
   node.addEventListener("mouseleave", () => { tt.style.display = "none"; cross.setAttribute("opacity", 0); });
+}
+
+function histogram(el, bins, color, format) {
+  if (!bins.length) { el.innerHTML = `<div class="empty">Not enough samples yet.</div>`; return; }
+  const W = 1000, H = 130, gap = 2;
+  const peak = Math.max(...bins.map(b => b.count)) || 1;
+  const total = bins.reduce((sum, b) => sum + b.count, 0) || 1;
+  const width = W / bins.length;
+  let svg = `<svg class="plot" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="height:${H}px">`;
+  bins.forEach((bin, i) => {
+    const h = (bin.count / peak) * (H - 6);
+    // 4px rounded data-ends anchored to the baseline; a 2px gap keeps bars distinct.
+    svg += `<rect x="${(i * width + gap / 2).toFixed(1)}" y="${(H - h).toFixed(1)}" ` +
+           `width="${Math.max(1, width - gap).toFixed(1)}" height="${h.toFixed(1)}" ` +
+           `rx="2" fill="${color}" opacity="${0.45 + 0.55 * (bin.count / peak)}"><title>` +
+           `${format(bin.lo)} – ${format(bin.hi)}: ${(100 * bin.count / total).toFixed(1)}%</title></rect>`;
+  });
+  svg += `</svg>`;
+  el.innerHTML = svg +
+    `<div style="display:flex;justify-content:space-between;font-size:10.5px;color:var(--text-3);margin-top:3px">
+       <span>${format(bins[0].lo)}</span>
+       <span>${(100 * peak / total).toFixed(1)}% in the tallest bin</span>
+       <span>${format(bins[bins.length - 1].hi)}</span></div>`;
 }
 
 function spark(points, color) {
@@ -390,91 +538,126 @@ function spark(points, color) {
   const x = i => (i / (points.length - 1)) * W;
   const y = v => 3 + (1 - (v - lo) / span) * (H - 6);
   let d = "";
-  for (const run of runs(points)) {
+  for (const run of runs(points))
     run.forEach((i, k) => { d += `${k === 0 ? "M" : "L"}${x(i).toFixed(1)} ${y(points[i]).toFixed(1)}`; });
-  }
   return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none"><path d="${d}" fill="none" stroke="${color}" stroke-width="1.8" vector-effect="non-scaling-stroke" stroke-linejoin="round"/></svg>`;
 }
 
-/* ============================== data ============================== */
+/* ============================== dashboard ============================== */
+let firstPaintDone = false, lastOverview = null;
 
-function tile(label, value, unit, sparkline, color, caption) {
-  return `<div class="tile"><div class="label">${label}</div>
-    <div class="row"><span class="value">${value}<span class="unit">${unit}</span></span>
-    <span class="spark">${sparkline ? spark(sparkline, color) : ""}</span></div>
-    <div class="caption">${caption || ""}</div></div>`;
-}
-
-let firstPaintDone = false;
 async function refresh() {
   const overview = await json("/api/overview");
-  const picker = document.getElementById("source");
-  picker.hidden = overview.sources.length < 2;
-  if (picker.options.length !== overview.sources.length) {
-    picker.innerHTML = overview.sources.map(s => `<option value="${s.name}">${s.name}</option>`).join("");
-  }
-  // Prefer a router source once discovery finds one: it carries signal and data.
-  if (!state.source || !overview.sources.some(s => s.name === state.source)) {
-    const router = overview.sources.find(s => s.kind === "huawei" || s.kind === "zte");
-    state.source = (router || overview.sources[0])?.name;
-  }
-  picker.value = state.source;
-  const src = overview.sources.find(s => s.name === state.source);
+  lastOverview = overview;
+  state.owner = resolveOwners(overview);
+  // The router describes the connection; the probe describes the internet beyond it.
+  const router = overview.sources.find(s => s.kind !== "probe");
+  state.primary = (router || overview.sources[0])?.name;
+  const src = overview.sources.find(s => s.name === state.primary);
   if (!src) return;
 
-  document.getElementById("dot").className = "pulse-dot" + (src.up ? "" : " down");
-  const parts = [`<b>${src.up ? "online" : "offline"}</b>`];
+  // Merged reading: every metric from whichever source reports it.
+  const merged = { latest: {}, sparklines: {}, texts: {} };
+  for (const source of overview.sources)
+    for (const field of ["latest", "sparklines", "texts"])
+      for (const [key, value] of Object.entries(source[field]))
+        if (!(key in merged[field])) merged[field][key] = value;
+
+  // Offline anywhere is offline: a router with a live radio and no route to the
+  // internet is not a working connection, however healthy its own status page looks.
+  const up = overview.sources.every(s => s.up);
+  document.getElementById("dot").className = "pulse-dot" + (up ? "" : " down");
+  const parts = [`<b>${up ? "online" : "offline"}</b>`];
+  src.latest = merged.latest; src.sparklines = merged.sparklines;
+  src.texts = { ...merged.texts, ...src.texts };
   if (src.texts["net.operator"]) parts.push(src.texts["net.operator"]);
   if (src.texts["net.type"]) parts.push(`<span class="tag">${src.texts["net.type"]}</span>`);
   if (src.texts["signal.band"]) parts.push(`<span class="tag">${src.texts["signal.band"]}</span>`);
-  if (src.uptime_24h != null) parts.push(`up ${(src.uptime_24h * 100).toFixed(1)}% · 24h`);
+  if (src.latest["router.uptime_s"] != null) {
+    const hours = Math.floor(src.latest["router.uptime_s"] / 3600);
+    const mins = Math.floor((src.latest["router.uptime_s"] % 3600) / 60);
+    parts.push(`router up ${hours}h ${mins}m`);
+  }
+  if (src.uptime_24h != null) parts.push(`link up ${(src.uptime_24h * 100).toFixed(1)}% · 24h`);
   document.getElementById("headmeta").innerHTML = parts.join(" · ");
 
-  const m = src.latest, sp = src.sparklines;
-  const down = css("--down"), up = css("--up"), mono = css("--mono");
-  let tiles = "";
-  if (m["traffic.down_bytes_s"] != null)
-    tiles += tile("Download", fmt.mbps(m["traffic.down_bytes_s"]), "Mbps", sp["traffic.down_bytes_s"], down, "current traffic");
-  if (m["traffic.up_bytes_s"] != null)
-    tiles += tile("Upload", fmt.mbps(m["traffic.up_bytes_s"]), "Mbps", sp["traffic.up_bytes_s"], up, "current traffic");
-  if (m["latency.internet_ms"] != null)
-    tiles += tile("Latency", Math.round(m["latency.internet_ms"]), "ms", sp["latency.internet_ms"], mono, "to the internet, live");
-  if (m["signal.rsrp_dbm"] != null)
-    tiles += tile("Signal", Math.round(m["signal.rsrp_dbm"]), "dBm", sp["signal.rsrp_dbm"], mono, "RSRP at the router");
-  if (m["signal.sinr_db"] != null)
-    tiles += tile("Quality", m["signal.sinr_db"].toFixed(0), "dB", sp["signal.sinr_db"], mono, "SINR — higher is cleaner");
-  if (m["loss.pct"] != null)
-    tiles += tile("Ping success", (100 - m["loss.pct"]).toFixed(0), "%", null, mono, "last probe round");
-  if (m["data.month_down_bytes"] != null)
-    tiles += tile("Data this month", fmt.bytes(m["data.month_down_bytes"] + (m["data.month_up_bytes"] || 0)), "", null, down, "counted by the router");
-  if (m["speedtest.down_bytes_s"] != null)
-    tiles += tile("Speed test", fmt.mbps(m["speedtest.down_bytes_s"]), "Mbps ↓", null, down,
-      `↑ ${fmt.mbps(m["speedtest.up_bytes_s"])} Mbps — on demand`);
-  document.getElementById("tiles").innerHTML = tiles;
+  renderNotices(overview);
+  renderTiles(src);
 
   const facts = [];
   for (const [key, label] of [["net.operator", "Operator"], ["net.type", "Network"],
-      ["signal.band", "Band"], ["signal.cell_id", "Cell"], ["net.gateway", "Gateway"]]) {
+      ["signal.band", "Band"], ["signal.cell_id", "Cell"], ["net.gateway", "Gateway"]])
     if (src.texts[key]) facts.push(`<span class="k">${label}</span><span class="v">${src.texts[key]}</span>`);
-  }
-  facts.push(`<span class="k">Recorded</span><span class="v">${(src.coverage * 100).toFixed(0)}% of the last hour</span>`);
+  facts.push(`<span class="k">Measured by</span><span class="v">${
+    overview.sources.map(s => s.kind).join(" + ")}</span>`);
+  facts.push(`<span class="k">Recorded</span><span class="v">${
+    (Math.max(...overview.sources.map(s => s.coverage)) * 100).toFixed(0)}% of the last hour</span>`);
   document.getElementById("facts").innerHTML = facts.join("");
 
   await Promise.all([drawCharts(), drawQuality(), drawInsights(), drawEvents(), drawDevices()]);
   firstPaintDone = true;
 }
 
+function renderTiles(src) {
+  const m = src.latest, sp = src.sparklines;
+  let html = "";
+  for (const [key, spec] of Object.entries(METRICS)) {
+    if (m[key] == null) continue;
+    html += `<button class="tile" data-metric="${key}"><span class="chev">›</span>
+      <div class="label">${spec.label}</div>
+      <div class="row"><span class="value">${spec.tile(m[key])}<span class="unit">${spec.unit}</span></span>
+      <span class="spark">${sp[key] ? spark(sp[key], css(spec.color)) : ""}</span></div>
+      <div class="caption">${spec.caption}</div></button>`;
+  }
+  // Some firmware reports a single monthly total, others a down/up pair. Adding a
+  // total to an upload figure would double-count, so the total wins where it exists.
+  const monthly = m["data.month_total_bytes"] != null
+    ? m["data.month_total_bytes"]
+    : m["data.month_down_bytes"] != null
+      ? m["data.month_down_bytes"] + (m["data.month_up_bytes"] || 0)
+      : null;
+  if (monthly != null)
+    html += `<div class="tile" style="cursor:default"><div class="label">Data this month</div>
+      <div class="row"><span class="value">${fmt.bytes(monthly)}</span></div>
+      <div class="caption">counted by the router</div></div>`;
+  if (m["speedtest.down_bytes_s"] != null)
+    html += `<div class="tile" style="cursor:default"><div class="label">Speed test</div>
+      <div class="row"><span class="value">${fmt.mbps(m["speedtest.down_bytes_s"])}<span class="unit">Mbps ↓</span></span></div>
+      <div class="caption">↑ ${fmt.mbps(m["speedtest.up_bytes_s"])} Mbps — on demand</div></div>`;
+  document.getElementById("tiles").innerHTML = html;
+}
+
+/* A dashboard with two tiles should say why, not just look empty. */
+function renderNotices(overview) {
+  const box = document.getElementById("notices");
+  // The test is what is missing, not which adapters are configured: a router that is
+  // present but reporting nothing leaves exactly the same hole for the reader.
+  if ("signal.rsrp_dbm" in state.owner) { box.innerHTML = ""; return; }
+  box.innerHTML = `<div class="notice">
+    <div style="flex:1">
+      <h3>Only this machine's connection is being measured</h3>
+      <p>Latency and packet loss come from probing the internet directly. Signal strength,
+      data usage and connected devices have to be read from the router itself — scan for
+      it, and those tiles appear. If your router is found but not yet supported, run
+      <code>netpulse probe-router http://192.168.0.1</code> and open an issue with the output.</p>
+    </div>
+    <button class="btn primary" onclick="document.getElementById('settings').click()">Find my router</button>
+  </div>`;
+}
+
 async function drawCharts() {
-  const q = metric =>
-    json(`/api/history?source=${encodeURIComponent(state.source)}&metric=${metric}&minutes=${state.minutes}&buckets=120`);
+  const q = metric => {
+    const source = state.owner[metric] || state.primary;
+    return json(`/api/history?source=${encodeURIComponent(source)}&metric=${metric}` +
+                `&minutes=${state.minutes}&buckets=120`);
+  };
   const [latency, downH, upH, rsrp, sinr, events] = await Promise.all([
     q("latency.internet_ms"), q("traffic.down_bytes_s"), q("traffic.up_bytes_s"),
     q("signal.rsrp_dbm"), q("signal.sinr_db"), json(`/api/events?minutes=${state.minutes}`),
   ]);
-  const down = css("--down"), up = css("--up"), mono = css("--mono");
   const times = latency.times;
   const bands = events.events
-    .filter(e => e.kind === "outage" && e.source === state.source)
+    .filter(e => e.kind === "outage")
     .map(e => {
       const a = times.findIndex(t => t >= e.started_at);
       const b = e.ended_at ? times.findIndex(t => t >= e.ended_at) : times.length - 1;
@@ -482,32 +665,48 @@ async function drawCharts() {
     }).filter(Boolean);
 
   chart(document.getElementById("throughput"),
-    [{ name: "download", color: down, fill: css("--down-fill"), points: downH.points.map(v => v == null ? null : v * 8 / 1e6) },
-     { name: "upload", color: up, fill: css("--up-fill"), points: upH.points.map(v => v == null ? null : v * 8 / 1e6) }],
+    [{ name: "download", color: css("--down"), fill: css("--down-fill"), points: downH.points.map(v => v == null ? null : v * 8 / 1e6) },
+     { name: "upload", color: css("--up"), fill: css("--up-fill"), points: upH.points.map(v => v == null ? null : v * 8 / 1e6) }],
     { times: downH.times, height: 210, format: fmt.axis, tip: v => v.toFixed(1) + " Mbps" });
 
   chart(document.getElementById("latency"),
-    [{ name: "latency", color: mono, fill: css("--mono-fill"), points: latency.points }],
-    { times, bands, height: 190, format: v => Math.round(v), tip: fmt.ms });
+    [{ name: "latency", color: css("--mono"), fill: css("--mono-fill"), points: latency.points }],
+    { times, bands, height: 190, format: v => Math.round(v), tip: fmt.ms, floor: 0 });
   document.getElementById("latency-note").textContent =
     `Recorded ${(latency.coverage * 100).toFixed(0)}% of this window — shaded stretches were not sampled, and nothing is invented across them.`;
 
   const hasSignal = rsrp.points.some(v => v != null);
   document.getElementById("signal-panel").hidden = !hasSignal;
   if (hasSignal) {
+    // On 5G non-standalone both carriers are live at once, so both get drawn — the
+    // anchor alone would hide the leg that is actually carrying the traffic.
+    const [rsrp5g, sinr5g] = await Promise.all([q("signal.rsrp_5g_dbm"), q("signal.sinr_5g_db")]);
+    const dual = rsrp5g.points.some(v => v != null);
+    document.getElementById("signal-legend").innerHTML = dual
+      ? `<span><span class="dot" style="background:var(--mono)"></span>LTE anchor</span>
+         <span><span class="dot" style="background:var(--down)"></span>5G carrier</span>`
+      : `<span><span class="dot" style="background:var(--mono)"></span>serving cell</span>`;
+    // Two filled areas at similar values stack into an unreadable block, so the second
+    // carrier is a line over the first one's fill — Dishylink's two-series treatment.
+    const pair = (base, extra) => extra
+      ? [base, { name: "5G", color: css("--down"), fill: null, points: extra }]
+      : [base];
     chart(document.getElementById("rsrp"),
-      [{ name: "RSRP", color: mono, fill: css("--mono-fill"), points: rsrp.points }],
+      pair({ name: "LTE", color: css("--mono"), fill: css("--mono-fill"), points: rsrp.points },
+           dual ? rsrp5g.points : null),
       { times: rsrp.times, height: 150, floor: -120, format: v => Math.round(v), tip: v => v.toFixed(1) + " dBm" });
     chart(document.getElementById("sinr"),
-      [{ name: "SINR", color: mono, fill: css("--mono-fill"), points: sinr.points }],
+      pair({ name: "LTE", color: css("--mono"), fill: css("--mono-fill"), points: sinr.points },
+           dual ? sinr5g.points : null),
       { times: sinr.times, height: 150, floor: -5, format: v => Math.round(v), tip: v => v.toFixed(1) + " dB" });
   }
 }
 
 async function drawQuality() {
-  const data = await json(`/api/quality?source=${encodeURIComponent(state.source)}`);
-  if (!data.quality) return;
-  const quality = data.quality;
+  // Graded on whoever measures internet latency — the router cannot see past its WAN.
+  const source = state.owner["latency.internet_ms"] || state.primary;
+  const { quality } = await json(`/api/quality?source=${encodeURIComponent(source)}`);
+  if (!quality) return;
   document.getElementById("quality").innerHTML = `
     <div class="grade-row">
       <div class="grade ${quality.grade}">${quality.grade}</div>
@@ -519,10 +718,19 @@ async function drawQuality() {
 }
 
 async function drawInsights() {
-  const data = await json(`/api/insights?source=${encodeURIComponent(state.source)}`);
+  // Every source gets diagnosed: the router explains the radio, the probe explains the
+  // path beyond it, and a fault in either is a fault in the connection.
+  const names = [...new Set(Object.values(state.owner))];
+  const results = await Promise.all(names.map(name =>
+    json(`/api/insights?source=${encodeURIComponent(name)}`).catch(() => ({ insights: [] }))));
+  const rank = { critical: 0, warning: 1, info: 2 };
+  const seen = new Set();
+  const insights = results.flatMap(r => r.insights)
+    .filter(i => !seen.has(i.title) && seen.add(i.title))
+    .sort((a, b) => rank[a.severity] - rank[b.severity]);
   const color = { critical: "var(--critical)", warning: "var(--serious)", info: "var(--good)" };
-  document.getElementById("insights").innerHTML = data.insights.length
-    ? data.insights.map(i => `<div class="insight"><div class="bar" style="background:${color[i.severity]}"></div>
+  document.getElementById("insights").innerHTML = insights.length
+    ? insights.map(i => `<div class="insight"><div class="bar" style="background:${color[i.severity]}"></div>
         <div><div class="title">${i.title}</div><div class="detail">${i.detail}</div></div></div>`).join("")
     : `<div class="empty">Nothing to flag — the connection looks healthy.</div>`;
 }
@@ -533,40 +741,104 @@ async function drawEvents() {
   document.getElementById("events").innerHTML = data.events.length
     ? data.events.slice(0, 10).map(e => {
         const mins = e.ended_at ? Math.max(1, Math.round((new Date(e.ended_at) - new Date(e.started_at)) / 60000)) : null;
-        const tail = e.ended_at ? `<span class="dur">${mins}m</span>` : `<span class="live">ongoing</span>`;
-        return `<div class="event"><span class="when">${fmt.when(e.started_at)}</span>
-          <span class="sev ${e.severity}"></span><span>${e.kind} · ${e.source}</span>${tail}</div>`;
+        return `<div class="row-item"><span class="when" style="min-width:74px">${fmt.when(e.started_at)}</span>
+          <span class="sev ${e.severity}"></span><span>${e.kind} · ${e.source}</span>
+          ${e.ended_at ? `<span class="dur">${mins}m</span>` : `<span class="live">ongoing</span>`}</div>`;
       }).join("")
     : `<div class="empty">No outages recorded.</div>`;
 }
 
 async function drawDevices() {
-  const data = await json(`/api/devices?source=${encodeURIComponent(state.source)}&hours=24`);
-  const panel = document.getElementById("devices-panel");
-  panel.hidden = data.devices.length === 0;
+  const data = await json(`/api/devices?source=${encodeURIComponent(state.primary)}&hours=24`);
+  document.getElementById("devices-panel").hidden = data.devices.length === 0;
   document.getElementById("devcount").textContent = `${data.devices.length} · 24h`;
   document.getElementById("devices").innerHTML = data.devices.map(d =>
-    `<div class="device"><span class="name">${d.name || "unnamed"}</span>
-     <span class="meta">${d.ip}</span><span style="flex:1"></span>
-     <span class="meta">${fmt.when(d.last_seen)}</span></div>`).join("");
+    `<div class="row-item"><span style="font-weight:600">${d.name || "unnamed"}</span>
+     <span class="when">${d.ip}</span><span style="flex:1"></span>
+     <span class="when">${fmt.when(d.last_seen)}</span></div>`).join("");
+}
+
+/* ============================== detail view ============================== */
+async function openDetail(metric) {
+  state.detail = metric;
+  state.detailMinutes = state.minutes;
+  document.getElementById("modal-root").hidden = false;
+  await renderDetail();
+}
+
+async function renderDetail() {
+  const metric = state.detail, spec = METRICS[metric];
+  const minutes = state.detailMinutes;
+  const source = encodeURIComponent(state.owner[metric] || state.primary);
+  const [series, dist] = await Promise.all([
+    json(`/api/history?source=${source}&metric=${metric}&minutes=${minutes}&buckets=140`),
+    json(`/api/distribution?source=${source}&metric=${metric}&minutes=${minutes}`),
+  ]);
+  const shown = series.points.filter(v => v != null);
+  const toChart = spec.toChart || (v => v);
+  const live = lastOverview?.sources.find(s => s.name === state.primary)?.latest?.[metric];
+  const heroes = [
+    ["Current", live == null ? "–" : spec.tile(live)],
+    ["Average", dist.mean == null ? "–" : spec.tile(dist.mean)],
+    ["Best", shown.length ? spec.tile(Math.min(...shown)) : "–"],
+    ["Worst", shown.length ? spec.tile(Math.max(...shown)) : "–"],
+  ];
+
+  document.getElementById("modal").innerHTML = `
+    <div class="modal-head"><h2>${spec.label}</h2>
+      <button class="close" data-dismiss>×</button></div>
+    <div class="heroes">${heroes.map(([label, value]) =>
+      `<div class="hero"><div class="n">${value}<span>${spec.unit}</span></div>
+       <div class="l">${label}</div></div>`).join("")}</div>
+    <div class="seg" id="detail-seg" style="margin:0 0 4px"></div>
+    <div class="chart" id="detail-chart"></div>
+    <div class="note">Recorded ${(series.coverage * 100).toFixed(0)}% of this window.
+      ${dist.count} raw samples in the distribution below.</div>
+    <div class="sub-h">Distribution</div>
+    <div class="sub-p">Where the value actually sat over this window, from raw samples —
+      the shape an average hides.</div>
+    <div id="detail-hist"></div>
+    <div class="explain"><h4>${spec.explain[0]}</h4><p>${spec.explain[1]}</p></div>`;
+
+  document.getElementById("detail-seg").innerHTML = RANGES.map(([label, m]) =>
+    `<button data-detail-m="${m}" class="${m === minutes ? "on" : ""}">${label}</button>`).join("");
+
+  chart(document.getElementById("detail-chart"),
+    [{ name: spec.label, color: css(spec.color), fill: css(spec.fill),
+       points: series.points.map(v => v == null ? null : toChart(v)) }],
+    { times: series.times, height: 200, format: spec.axisFmt,
+      tip: spec.chartFmt, floor: spec.floor ?? null });
+  histogram(document.getElementById("detail-hist"), dist.bins, css(spec.color),
+    v => spec.tile(v) + " " + spec.unit);
 }
 
 /* ============================== wiring ============================== */
+for (const seg of document.querySelectorAll(".seg"))
+  seg.innerHTML = RANGES.map(([label, m]) =>
+    `<button data-m="${m}" class="${m === state.minutes ? "on" : ""}">${label}</button>`).join("");
 
-for (const seg of document.querySelectorAll(".seg")) {
-  seg.innerHTML = RANGES.map(([label, minutes]) =>
-    `<button data-m="${minutes}" class="${minutes === state.minutes ? "on" : ""}">${label}</button>`).join("");
-}
 document.addEventListener("click", event => {
-  const button = event.target.closest(".seg button"); if (!button) return;
-  state.minutes = Number(button.dataset.m);
-  for (const other of document.querySelectorAll(".seg button"))
-    other.classList.toggle("on", Number(other.dataset.m) === state.minutes);
-  drawCharts();
+  const range = event.target.closest("[data-m]");
+  if (range) {
+    state.minutes = Number(range.dataset.m);
+    for (const other of document.querySelectorAll("[data-m]"))
+      other.classList.toggle("on", Number(other.dataset.m) === state.minutes);
+    drawCharts();
+    return;
+  }
+  const detailRange = event.target.closest("[data-detail-m]");
+  if (detailRange) { state.detailMinutes = Number(detailRange.dataset.detailM); renderDetail(); return; }
+  const tile = event.target.closest(".tile[data-metric]");
+  if (tile) { openDetail(tile.dataset.metric); return; }
+  if (event.target.closest("[data-dismiss]")) {
+    document.getElementById("modal-root").hidden = true;
+    document.getElementById("drawer-root").hidden = true;
+  }
 });
-
-document.getElementById("source").addEventListener("change", event => {
-  state.source = event.target.value; refresh();
+document.addEventListener("keydown", event => {
+  if (event.key !== "Escape") return;
+  document.getElementById("modal-root").hidden = true;
+  document.getElementById("drawer-root").hidden = true;
 });
 
 document.getElementById("theme").addEventListener("click", () => {
@@ -575,6 +847,7 @@ document.getElementById("theme").addEventListener("click", () => {
   root.setAttribute("data-theme", next);
   try { localStorage.setItem("netpulse-theme", next); } catch {}
   refresh();
+  if (state.detail && !document.getElementById("modal-root").hidden) renderDetail();
 });
 try {
   const saved = localStorage.getItem("netpulse-theme");
@@ -586,39 +859,44 @@ document.getElementById("speedtest").addEventListener("click", async event => {
   if (!confirm("A speed test moves about 30 MB of real data — many plans are metered. Run it?")) return;
   button.disabled = true; button.textContent = "Testing…";
   try {
-    const result = await json(`/api/speedtest?source=${encodeURIComponent(state.source)}`, { method: "POST" });
+    const result = await json(`/api/speedtest?source=${encodeURIComponent(state.primary)}`, { method: "POST" });
     button.textContent = result.error ? "Failed" : `↓ ${result.down_mbps} ↑ ${result.up_mbps} Mbps`;
     refresh();
   } catch { button.textContent = "Failed"; }
   setTimeout(() => { button.textContent = "Speed test"; button.disabled = false; }, 9000);
 });
 
-/* -------- settings drawer: sources + router scan -------- */
-const drawer = document.getElementById("drawer-root");
 document.getElementById("settings").addEventListener("click", async () => {
-  drawer.hidden = false;
+  document.getElementById("drawer-root").hidden = false;
   const overview = await json("/api/overview");
   document.getElementById("srclist").innerHTML = overview.sources.map(s => `
     <div class="srcrow"><span class="pulse-dot ${s.up ? "" : "down"}" style="width:8px;height:8px"></span>
-      <b>${s.name}</b><span class="k">${s.kind}</span>
-      <span style="flex:1"></span>
-      <span class="k">${s.texts["net.operator"] || s.texts["net.gateway"] || ""}</span></div>`).join("");
+      <b>${s.name}</b><span class="when">${s.kind}</span><span style="flex:1"></span>
+      <span class="when">${s.texts["net.operator"] || s.texts["net.gateway"] || ""}</span></div>`).join("");
 });
-document.getElementById("drawer-back").addEventListener("click", () => { drawer.hidden = true; });
 
 document.getElementById("scan").addEventListener("click", async event => {
   const button = event.target, status = document.getElementById("scanstate");
-  button.disabled = true; status.textContent = " scanning the gateway and well-known addresses…";
+  button.disabled = true; status.textContent = "scanning…";
   try {
     const data = await json("/api/discover", { method: "POST" });
-    status.textContent = data.found.length ? "" : " no router answered — the probe still monitors this connection.";
-    document.getElementById("scanresults").innerHTML = data.found.map(f => `
-      <div class="found"><div><b>${f.label}</b><br><span style="color:var(--text-3);font-size:11px">${f.url} · ${f.kind}</span></div>
-        <span style="flex:1"></span>
-        ${f.already_watched ? `<span style="color:var(--good);font-size:12px">watching</span>`
-          : `<button class="iconbtn" data-kind="${f.kind}" data-url="${f.url}">Watch it</button>`}
-      </div>`).join("");
-  } catch { status.textContent = " scan failed"; }
+    status.textContent = data.found.length ? "" : "no router answered on the gateway or the usual addresses.";
+    document.getElementById("scanresults").innerHTML = data.found.map(f => {
+      const action = f.already_watched
+        ? `<span style="color:var(--good);font-size:12px">watching</span>`
+        : f.kind === "unknown"
+          ? `<span class="when">not supported yet</span>`
+          : `<button class="btn primary" data-kind="${f.kind}" data-url="${f.url}">Watch it</button>`;
+      const help = f.kind === "unknown"
+        ? `<div style="font-size:11.5px;color:var(--text-2);margin-top:8px;line-height:1.6">
+             Found the box, but NetPulse does not speak its API yet. Run
+             <code>netpulse probe-router ${f.url}</code> and open an issue with the output —
+             that is exactly what an adapter gets built from.</div>` : "";
+      return `<div class="found" style="flex-wrap:wrap">
+        <div><b>${f.label}</b><br><span class="when">${f.url} · ${f.kind}</span></div>
+        <span style="flex:1"></span>${action}${help}</div>`;
+    }).join("");
+  } catch { status.textContent = "scan failed"; }
   button.disabled = false;
 });
 document.getElementById("scanresults").addEventListener("click", async event => {
@@ -628,6 +906,8 @@ document.getElementById("scanresults").addEventListener("click", async event => 
   button.textContent = "Watching ✓";
   setTimeout(refresh, 1500);
 });
+
+window.addEventListener("resize", () => { if (firstPaintDone) drawCharts(); });
 
 refresh();
 setInterval(refresh, 15000);

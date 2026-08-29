@@ -85,7 +85,10 @@ def test_the_dashboard_page_is_self_contained(served: str) -> None:
         html = response.read().decode()
     assert "NetPulse" in html
     # Must render during an outage: no external scripts, styles or fonts.
-    assert "http://" not in html.replace("http://127.0.0.1", "")
+    # No external resource ever loads — a page that fetches during an outage is a page
+    # that cannot explain the outage. Prose may still name an address (the router's).
+    for attribute in ('src="http', "src='http", 'href="http', "href='http", "@import"):
+        assert attribute not in html
     assert "https://" not in html
     assert "<script src" not in html
 

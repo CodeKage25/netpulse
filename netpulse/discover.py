@@ -21,11 +21,11 @@ from netpulse.adapters.probe import default_gateway
 WELL_KNOWN = ("192.168.8.1", "192.168.0.1", "192.168.1.1")
 TIMEOUT_S = 2.0
 
-Fetch = Callable[[str, dict[str, str]], bytes]
+Fetch = Callable[..., bytes]
 
 
-def _urllib_fetch(url: str, headers: dict[str, str]) -> bytes:
-    request = urllib.request.Request(url, headers=headers)
+def _urllib_fetch(url: str, headers: dict[str, str], body: bytes | None = None) -> bytes:
+    request = urllib.request.Request(url, headers=headers, data=body)
     with urllib.request.urlopen(request, timeout=TIMEOUT_S) as response:
         return bytes(response.read())
 
@@ -72,6 +72,24 @@ def _detect_zte(base: str, fetch: Fetch) -> Discovered | None:
     return None
 
 
+def _detect_zlt(base: str, fetch: Fetch) -> Discovered | None:
+    """ZLT/Tozed (MTN's own-brand 5G boxes). cmd 113 answers unauthenticated and names
+    the board, so one harmless request both identifies the family and the model."""
+    try:
+        payload = fetch(
+            f"{base}/cgi-bin/http.cgi",
+            {"Content-Type": "application/json;charset=UTF-8"},
+            b'{"cmd":113,"method":"GET","sessionId":""}',
+        )
+        data = json.loads(payload or b"")
+    except Exception:
+        return None
+    if not isinstance(data, dict) or not data.get("success"):
+        return None
+    board = str(data.get("board_type") or "").strip()
+    return Discovered(kind="zlt", url=base, label=board or "ZLT router")
+
+
 def _detect_web_ui(base: str, fetch: Fetch) -> Discovered | None:
     """Last resort: a router page whose API we do not speak yet. Reported honestly as
     unidentified, so the user learns where their router is and can run the diagnostic,
@@ -100,7 +118,12 @@ def _detect_web_ui(base: str, fetch: Fetch) -> Discovered | None:
 
 def _probe(address: str, fetch: Fetch) -> Discovered | None:
     base = f"http://{address}"
-    return _detect_huawei(base, fetch) or _detect_zte(base, fetch) or _detect_web_ui(base, fetch)
+    return (
+        _detect_huawei(base, fetch)
+        or _detect_zlt(base, fetch)
+        or _detect_zte(base, fetch)
+        or _detect_web_ui(base, fetch)
+    )
 
 
 def discover(

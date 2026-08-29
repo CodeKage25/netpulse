@@ -46,7 +46,7 @@ somewhere unusual:
 [[source]]
 name = "mtn"
 kind = "huawei"
-url = "http://192.168.8.1"
+url = "http://192.168.0.1"
 # username/password unlock SMS reading (where balance texts arrive)
 
 [[source]]
@@ -91,6 +91,7 @@ answer every time, evidence attached.
 ```
 netpulse run [--demo] [--port 8787]   record + dashboard (+ background discovery)
 netpulse discover                     find your router, write the config
+netpulse probe-router <url>           show what a router answers (for new adapters)
 netpulse status                       latest reading per source, with 24h coverage
 netpulse events [--hours 48]          outages and degradations
 netpulse diagnose                     rule-based findings (exit 1 on critical)
@@ -108,6 +109,20 @@ netpulse diagnose                     rule-based findings (exit 1 on critical)
 - Tests never touch the network: adapters take injectable probes/fetchers, and router
   behaviour is tested against recorded XML/JSON fixtures — including half-formed XML from
   a router mid-reboot, which must register as a failed poll, not a crash.
+
+## Routers it reads
+
+| Adapter | Boxes | API | Login needed |
+|---|---|---|---|
+| `zlt` | ZLT / Tozed — MTN Nigeria's own-brand 5G (X17U and relatives) | `POST /cgi-bin/http.cgi` | no |
+| `huawei` | Huawei CPE — MTN, Glo, 9mobile | XML at `/api/*` | only for SMS |
+| `zte` | ZTE MC-series — Airtel, many MiFis | `/goform/` or `/reqproc/` | no |
+| `probe` | anything at all | ICMP/DNS/TCP from this machine | n/a |
+
+Your router missing? `netpulse probe-router http://<its address>` prints what its
+firmware actually answers, with anything secret elided. That output is what an adapter
+gets built from — the ZLT adapter above was written from exactly that, then tested
+against payloads captured verbatim from a live X17U.
 
 ## The dashboard
 

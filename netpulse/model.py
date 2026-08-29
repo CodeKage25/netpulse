@@ -48,6 +48,7 @@ AGG_RULES: dict[str, Agg] = {
     "data.": Agg.LAST,
     "devices.": Agg.LAST,
     "speedtest.": Agg.LAST,
+    "router.": Agg.LAST,  # uptime is an odometer; a mean of it means nothing
     "up": Agg.MIN,  # a bucket that saw any failure shows as down
 }
 

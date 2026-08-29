@@ -103,6 +103,35 @@ class Api:
             "devices": self.store.devices(source, self._clock() - timedelta(hours=hours)),
         }
 
+    def distribution(
+        self, source: str, metric: str, minutes: int, bins: int = 32
+    ) -> dict[str, Any]:
+        """A histogram of raw values — the shape a mean hides.
+
+        Computed from raw samples, never from buckets: a bucketed series has already
+        thrown away the distribution, and counting its maxima would draw a picture of
+        the worst case pretending to be the whole.
+        """
+        now = self._clock()
+        values = self.store.values(source, metric, now - timedelta(minutes=minutes), now)
+        if len(values) < 4:
+            return {"bins": [], "count": len(values)}
+        low, high = min(values), max(values)
+        if high <= low:
+            return {"bins": [{"lo": low, "hi": high, "count": len(values)}], "count": len(values)}
+        width = (high - low) / bins
+        counts = [0] * bins
+        for value in values:
+            counts[min(bins - 1, int((value - low) / width))] += 1
+        return {
+            "bins": [
+                {"lo": low + i * width, "hi": low + (i + 1) * width, "count": count}
+                for i, count in enumerate(counts)
+            ],
+            "count": len(values),
+            "mean": sum(values) / len(values),
+        }
+
     def quality(self, source: str) -> dict[str, Any]:
         graded = assess(self.store, source, self._clock())
         if graded is None:
@@ -246,6 +275,14 @@ def make_handler(api: Api) -> type[BaseHTTPRequestHandler]:
                     self._json(api.events(int(params.get("minutes", 1440))))
                 elif url.path == "/api/insights":
                     self._json(api.insights(params.get("source", "")))
+                elif url.path == "/api/distribution":
+                    self._json(
+                        api.distribution(
+                            params.get("source", ""),
+                            params.get("metric", ""),
+                            int(params.get("minutes", "60")),
+                        )
+                    )
                 elif url.path == "/api/quality":
                     self._json(api.quality(params.get("source", "")))
                 elif url.path == "/api/devices":
