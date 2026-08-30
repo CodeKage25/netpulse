@@ -56,10 +56,11 @@ and nothing else. **A new router is one file.**
 | `huawei` | Huawei CPE — MTN, Glo, 9mobile, Vodacom | XML at `/api/*` | only for SMS |
 | `zte` | ZTE MC-series — Airtel, MTN HyNetFlex (a rebadged MF286) | `/goform/` or `/reqproc/` | no |
 | `starlink` | every dish — Gen1 round through Gen3, Flat HP, Mini | gRPC-Web on `:9201` | no |
+| `netgear` | Nighthawk M1/M2/M5/M6, AirCard, LB1120/LB2120, LM1200 | `model.json` | no |
 | `snmp` | MikroTik RouterOS, Teltonika RutOS | SNMPv2c on 161 | community string |
 | `probe` | **anything at all** | ICMP/TCP/DNS from this machine | n/a |
 
-Discovery also **names** routers it cannot yet read — Netgear, Nokia FastMile, GL.iNet,
+Discovery also **names** routers it cannot yet read — Nokia FastMile, GL.iNet,
 OpenWrt, MikroTik, TP-Link, Tenda, Cudy, Sagemcom, Technicolor — so an unsupported box
 is a message about a missing adapter rather than a silent "no router found".
 

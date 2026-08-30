@@ -245,11 +245,10 @@ VENDORS: tuple[Vendor, ...] = (
     ),
     Vendor(
         name="Netgear",
-        kind="",
+        kind="netgear",
         addresses=("192.168.1.1", "192.168.5.1"),
         signatures=(Signature("/api/model.json?internalapi=1"),),
         match=_match_netgear_cellular,
-        note="Netgear's model.json carries the full radio without a login.",
     ),
     Vendor(
         name="Nokia",

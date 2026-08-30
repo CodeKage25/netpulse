@@ -67,6 +67,10 @@ def build(kind: str, name: str, options: dict[str, Any]) -> Adapter:
         from netpulse.sources.starlink import StarlinkAdapter
 
         return StarlinkAdapter(name, **options)
+    if kind == "netgear":
+        from netpulse.sources.netgear import NetgearAdapter
+
+        return NetgearAdapter(name, **options)
     if kind == "snmp":
         from netpulse.sources.snmp_router import SnmpAdapter
 
@@ -76,5 +80,6 @@ def build(kind: str, name: str, options: dict[str, Any]) -> Adapter:
 
         return DemoAdapter(name, **options)
     raise ValueError(
-        f"unknown adapter kind {kind!r}; available: probe, huawei, zte, zlt, starlink, snmp, demo"
+        f"unknown adapter kind {kind!r}; available: "
+        "probe, huawei, zte, zlt, starlink, netgear, snmp, demo"
     )
