@@ -65,3 +65,22 @@ Bugs found while building, in the honest column:
    with a regression test of exactly that link shape.
 3. Test fixtures raised KeyError where a real router raises OSError, hiding how the new
    host-list call would actually fail. Fixtures now fail like hardware.
+
+
+## 2026-08-30 — rules UI, FastMile, grade calibration
+
+- [x] Rules screen: every rule with its live verdict, remaining allowance, and whether it
+      blocks or only reports. Verdicts recomputed per request, never cached.
+- [x] Fixed `STATIC` being read above its own declaration in `app.js` — a top-level TDZ
+      throw that took the rest of the file with it.
+- [x] An unmeasured allowance no longer renders as a bar at 0%. Verdicts carry whether
+      anything was measured; the panel says so instead.
+- [x] Nokia FastMile adapter — per-carrier radio, no invented connection state, counter
+      differencing shared through `core.rates` (now used by ZLT too).
+- [x] Quality grade calibrated against the real database: F (22) -> A (98) on a 20 ms
+      link. Jitter definition, p95 rank, and unmeasured-loss credit all corrected.
+
+### Still open
+- Federation — the real answer to per-device usage the CPE firmware cannot report.
+- Week-over-week anomaly detection; scheduled speed tests.
+- The running instance needs a restart to pick up the grade and jitter fixes.

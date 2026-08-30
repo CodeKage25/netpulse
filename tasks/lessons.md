@@ -128,3 +128,22 @@ only visible when both are on screen together.
 a second time. **Rule:** when a metric is stored one way up and shown the other, every
 flag about it must state explicitly whether it describes the stored or the displayed
 value — and the tests should pin that sentence, because the code reads correct either way.
+
+### A weighted term is only as good as the thing it names
+The quality grade weighted jitter above the tail, deliberately — and then fed that weight
+the standard deviation of an hour of latency, which is not jitter. It reads high for slow
+drift, and highest of all when the *measurement* changes: fixing the latency bug made the
+score plunge, because the step between the old and new figures was scored as though the
+network had done it. A real hour with a 20 ms median and 0.26% loss graded F.
+
+**Rule:** when a formula weights a term heavily, check what the term actually computes on
+real data before trusting the weighting. Compare each input against an independent
+estimate of the same quantity — pstdev over the window against consecutive movement
+against the probe's own per-poll measurement. Three numbers that should agree and don't
+locate the bug immediately; one number on its own never does.
+
+### Checking is not always browsing
+Rendering the page found two bugs in one screenshot, but the user's instruction stands:
+verify from the data and the tests, and reserve a render for when the question is
+genuinely visual. A calibration question is answered by running the estimator over the
+real database, not by looking at the number it printed.
