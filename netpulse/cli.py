@@ -223,10 +223,12 @@ def speedtest_cmd(args: argparse.Namespace) -> int:
     source = store.sources()[0] if store.sources() else "wan"
     print("running…", flush=True)
     result = run_speedtest(store, source)
-    print(
-        f"download {result.down_mbps:.1f} Mbps   upload {result.up_mbps:.1f} Mbps"
-        f"   ({result.seconds:.0f}s)"
+    up = (
+        "not measured (no host would accept it)"
+        if result.up_mbps is None
+        else f"{result.up_mbps:.1f} Mbps"
     )
+    print(f"download {result.down_mbps:.1f} Mbps   upload {up}   ({result.seconds:.0f}s)")
     store.close()
     return 0
 

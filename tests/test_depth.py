@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from datetime import timedelta
 
+import pytest
+
 from netpulse.alerting.notify import Notifier
 from netpulse.analysis.speedtest import run_speedtest
 from netpulse.core.model import DeviceSeen, Reading
@@ -221,3 +223,44 @@ def test_the_collector_announces_down_and_back_with_duration(store: Store, clock
 
     assert any("down" in title for title in sent)
     assert any("back after" in title for title in sent)
+
+
+def test_throughput_is_the_best_sustained_window_not_the_average() -> None:
+    """An average measures two things that are not the link: TCP's slow start at the
+    beginning, and any stall at the far end. Both drag it below what the connection
+    actually carried, and on real back-to-back runs that swung the figure between
+    4.6 and 61 Mbps while nothing about the link changed."""
+    from netpulse.analysis.speedtest import best_rate
+
+    samples, total = [], 0
+    for step_index in range(60):  # six seconds, sampled every 100ms
+        ramping = step_index < 5
+        stalled = 25 <= step_index < 35
+        total += 100_000 if ramping else (0 if stalled else 1_000_000)
+        samples.append((step_index * 0.1, total))
+
+    assert best_rate(samples) == pytest.approx(10_000_000, rel=0.01)  # the real rate
+    assert total / 6.0 < 8_000_000  # what the average would have reported
+
+
+def test_a_transfer_shorter_than_one_window_still_reports_something() -> None:
+    """On a slow link the whole transfer may not fill a window. Refusing to report it
+    would leave exactly the connections that most need measuring with no figure."""
+    from netpulse.analysis.speedtest import best_rate
+
+    assert best_rate([(0.0, 0), (0.5, 500_000)]) == pytest.approx(1_000_000)
+
+
+def test_an_upload_nobody_accepts_does_not_discard_the_download(
+    store: Store, clock: Clock
+) -> None:
+    """One public upload host against three for download, so a refusal is much likelier
+    in that direction. Failing the whole run over it throws away a download figure that
+    was measured successfully seconds earlier."""
+    result = run_speedtest(store, "wan", download=lambda _: 5_000_000.0, upload=lambda _: None)
+    assert result.down_mbps == pytest.approx(40.0)
+    assert result.up_mbps is None
+    # …and an unmeasured direction records nothing rather than a zero, which would be
+    # charted as a link that managed no upload at all.
+    assert "speedtest.up_bytes_s" not in store.latest("wan")
+    assert store.latest("wan")["speedtest.down_bytes_s"][1] == 5_000_000.0

@@ -258,6 +258,21 @@ def identify_host(host: str) -> Service:
     return UNKNOWN
 
 
+_BY_NAME = {name: Service(name, kind) for _, name, kind in (*_TABLE, *_DOMAINS)}
+
+
+def identify_name(label: str) -> Service:
+    """A label this module produced, back to the service it described.
+
+    Usage is stored under the name rather than the endpoint — a day of YouTube is one
+    row, not four hundred addresses — so what comes back out of the store is already a
+    label. Passing that back through `describe` treats "Anthropic" as a hostname, finds
+    no domain matching it and reports a known service as unrecognised, which is exactly
+    what the screen did.
+    """
+    return _BY_NAME.get(label, UNKNOWN)
+
+
 def describe(endpoint: str) -> tuple[str, Service]:
     """A remote endpoint as (label, service), whether it arrived as a name or a number.
 

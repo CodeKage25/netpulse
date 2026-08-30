@@ -89,6 +89,17 @@ function renderNetwork(network, apps) {
     <div class="sub-p">Seen by the router in the last 24 hours.</div>
     ${rows || `<div class="empty">No devices reported. A router password is needed to list them.</div>`}
 
+    ${!network.others ? "" : `<div class="row-item" style="align-items:center">
+      <span style="font-weight:600">Everything except this machine</span>
+      <span class="when">today · the connection's own counter minus what this
+        machine used</span>
+      <span style="flex:1"></span>
+      <span class="when">${fmt.bytes(network.others.bytes)}</span></div>
+    <div class="sub-p" style="margin-top:6px">Which of the devices above that was,
+      nobody here can say — this is the total they moved between them. The router counts
+      frames on the wire and this machine counts bytes through sockets, so the figure
+      carries that difference and reads a little high.</div>`}
+
     ${network.per_device_bytes === "router" ? "" : `<div class="explain" style="margin-top:14px">
       <h4>Why only one device shows usage</h4>
       <p>Per-device traffic has to come from whatever sits in the path. This router

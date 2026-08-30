@@ -340,3 +340,18 @@ def test_the_static_flag_is_declared_before_anything_reads_it() -> None:
         assert code.index(name) == code.index(f"const {name} =") + len("const "), (
             f"{name} is read before it is declared"
         )
+
+
+def test_a_service_label_survives_the_round_trip_through_the_store() -> None:
+    """Usage is stored under the service's name, not the endpoint — a day of YouTube is
+    one row, not four hundred addresses. Reading that label back through the endpoint
+    parser treats "Anthropic" as a hostname, matches no domain, and reports a known
+    service as unrecognised. It did exactly that on screen."""
+    from netpulse.core.services import identify_name
+
+    assert identify_name("Anthropic").identifies_a_site is True
+    assert identify_name("YouTube").identifies_a_site is True
+    # …while the caveat still travels with the ones that carry it.
+    assert identify_name("Cloudflare").kind == "network"
+    assert identify_name("Microsoft Azure").kind == "cloud"
+    assert identify_name("165.66.149.34").known is False

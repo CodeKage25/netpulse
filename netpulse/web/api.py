@@ -34,7 +34,7 @@ from netpulse.config import SourceConfig
 from netpulse.core.clock import Clock, utcnow
 from netpulse.core.host import local_macs
 from netpulse.core.model import Agg
-from netpulse.core.services import describe
+from netpulse.core.services import identify_name
 from netpulse.core.storage import Store
 from netpulse.monitor import Collector
 from netpulse.sources import Blocker, build
@@ -410,6 +410,49 @@ class Api:
             if from_router
             else ("self" if any(d["measured_here"] for d in devices) else "none"),
             "services": self.services(source, hours),
+            "others": self._other_devices(source),
+        }
+
+    def _other_devices(self, source: str) -> dict[str, Any] | None:
+        """How much of today's traffic came from something other than this machine.
+
+        Not an apportionment — the individual phones stay unmeasured and are still shown
+        as such. This is the difference between two figures that were each measured: the
+        router's own odometer for the whole connection, and this machine's per-process
+        total. Whatever separates them left the house through a device that is not this
+        one, and that is a fact about the network rather than a share handed out.
+
+        It is withheld unless the day is almost fully recorded. Over a gap the odometer
+        keeps counting and the process sampler does not, so every unwatched minute lands
+        in the residual and inflates it — which would blame the phones for a NetPulse
+        restart.
+        """
+        now = self._clock()
+        start_of_day = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        days = usage_by_day(self.store, source, start_of_day, now)
+        if not days:
+            return None
+        _, connection, coverage = days[-1]
+        if connection is None or coverage < 0.8:
+            return None
+
+        mine = sum(
+            down + up for _, down, up in self.store.usage_by_key(source, "app", start_of_day)
+        )
+        if not mine:
+            return None
+        residual = connection - mine
+        # The router counts frames on the wire; this machine counts bytes through
+        # sockets. The first is legitimately the larger, by headers and retransmissions,
+        # so a small positive residual is that overhead rather than another device. Below
+        # a tenth of the connection's traffic there is nothing here worth reporting.
+        if residual <= connection * 0.1:
+            return None
+        return {
+            "bytes": residual,
+            "connection_bytes": connection,
+            "this_machine_bytes": mine,
+            "coverage": round(coverage, 3),
         }
 
     def services(self, source: str, hours: float = 24) -> list[dict[str, Any]]:
@@ -430,7 +473,8 @@ class Api:
     def _service_rows(self, source: str, since: datetime) -> list[dict[str, Any]]:
         found = []
         for key, down, up in self.store.usage_by_key(source, "service", since)[:25]:
-            _, service = describe(key)
+            # The stored key is already a label this module produced, not an endpoint.
+            service = identify_name(key)
             found.append(
                 {
                     "key": key,
@@ -614,7 +658,9 @@ class Api:
             return {"error": f"No measurement host would answer ({exc}). Your connection is fine."}
         return {
             "down_mbps": round(result.down_mbps, 1),
-            "up_mbps": round(result.up_mbps, 1),
+            # None when no host would accept an upload. The download still stands, and
+            # reporting it beats discarding a good measurement over the other direction.
+            "up_mbps": None if result.up_mbps is None else round(result.up_mbps, 1),
             "seconds": round(result.seconds, 1),
         }
 

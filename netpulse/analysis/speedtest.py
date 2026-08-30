@@ -39,13 +39,25 @@ UP_BYTES = 8_000_000
 #: about ten anyway. Whatever arrived by the deadline is the sample — a partial
 #: transfer measures the rate just as well as a whole one.
 MAX_SECONDS_PER_DIRECTION = 12.0
+#: A single socket read may block this long. It bounds the overrun, because the deadline
+#: above can only be checked between reads: without it one stalled read took a run that
+#: was supposed to stop at twelve seconds out to thirty-nine.
+READ_TIMEOUT = 6.0
+#: Throughput is reported as the best rate sustained over a window this long, rather than
+#: the average across the whole transfer. Capacity is a maximum, and an average is
+#: dragged down by two things that are not the link: TCP's slow start at the beginning,
+#: and any stall at the far end. Measured back to back on one unchanged connection, the
+#: average swung between 4.6 and 61 Mbps.
+RATE_WINDOW_S = 2.0
 COST_NOTE = f"moves up to {(DOWN_BYTES + UP_BYTES) / 1e6:.0f} MB of real data, less on a slow link"
 
 
 @dataclass(frozen=True)
 class SpeedResult:
     down_bytes_s: float
-    up_bytes_s: float
+    #: None when no upload host would accept the transfer. Absent, not zero — a link
+    #: nobody would let us push data to has not been measured at zero.
+    up_bytes_s: float | None
     seconds: float
 
     @property
@@ -53,8 +65,8 @@ class SpeedResult:
         return self.down_bytes_s * 8 / 1e6
 
     @property
-    def up_mbps(self) -> float:
-        return self.up_bytes_s * 8 / 1e6
+    def up_mbps(self) -> float | None:
+        return None if self.up_bytes_s is None else self.up_bytes_s * 8 / 1e6
 
 
 class TestHostUnavailable(Exception):
@@ -65,18 +77,53 @@ class TestHostUnavailable(Exception):
     """
 
 
+def best_rate(samples: list[tuple[float, int]], window: float = RATE_WINDOW_S) -> float:
+    """The fastest rate sustained over any `window` of a transfer.
+
+    `samples` is (elapsed seconds, cumulative bytes), in order. The answer is the
+    steepest line between two points at least `window` apart — which is what a link's
+    capacity means, as opposed to the average, which also measures how long TCP took to
+    get going and how long the far end paused in the middle.
+
+    Falls back to the overall average when the transfer was shorter than one window,
+    because on a slow link that is the whole measurement and refusing to report it would
+    be worse than reporting it with its own limitation.
+    """
+    if len(samples) < 2:
+        return 0.0
+    total_time, total_bytes = samples[-1]
+    fallback = total_bytes / total_time if total_time > 0 else 0.0
+    best = 0.0
+    start = 0
+    for end in range(1, len(samples)):
+        while samples[end][0] - samples[start][0] > window and start < end - 1:
+            start += 1
+        span = samples[end][0] - samples[start][0]
+        if span >= window:
+            best = max(best, (samples[end][1] - samples[start][1]) / span)
+    return best or fallback
+
+
 def _download(size: int) -> float:
     refusals: list[str] = []
     for template in DOWNLOAD_URLS:
-        started = time.perf_counter()
-        received = 0
         request = urllib.request.Request(template.format(size=size), headers=HEADERS)
         try:
-            with urllib.request.urlopen(request, timeout=30) as response:
-                while chunk := response.read(65536):
-                    received += len(chunk)
-                    if time.perf_counter() - started >= MAX_SECONDS_PER_DIRECTION:
-                        break  # enough to measure the rate; the rest costs data
+            with urllib.request.urlopen(request, timeout=READ_TIMEOUT) as response:
+                first = response.read(65536)
+                # The clock starts at the first byte. Name resolution, the TCP handshake
+                # and TLS are real time, but they are latency rather than throughput, and
+                # on a twelve second budget counting them understates a fast link badly.
+                started = time.perf_counter()
+                received = len(first)
+                samples = [(0.0, received)]
+                while first:
+                    elapsed = time.perf_counter() - started
+                    if elapsed >= MAX_SECONDS_PER_DIRECTION:
+                        break  # enough to measure the rate; the rest costs real data
+                    first = response.read(65536)
+                    received += len(first)
+                    samples.append((time.perf_counter() - started, received))
         except urllib.error.HTTPError as exc:
             # The host answered and said no. Try the next one rather than blaming the
             # connection that just successfully carried the refusal.
@@ -86,13 +133,20 @@ def _download(size: int) -> float:
             refusals.append(f"{urlsplit(template).netloc}: {exc}")
             continue
         if received:
-            return received / max(1e-6, time.perf_counter() - started)
+            return best_rate(samples)
     raise TestHostUnavailable("; ".join(refusals) or "no host answered")
 
 
-def _upload(size: int) -> float:
+def _upload(size: int) -> float | None:
     """Upload cannot be cut short mid-body without corrupting the request, so the size
-    is chosen from what download just measured rather than the deadline enforced."""
+    is chosen from what download just measured rather than the deadline enforced.
+
+    Returns None when no host would take it. There is exactly one public endpoint here
+    against three for download, so a refusal is markedly more likely in this direction —
+    and failing the whole run over it would throw away a download figure that was
+    measured successfully seconds earlier. A test that reports one direction and says
+    the other could not be measured is more use than no test at all.
+    """
     payload = b"\0" * size
     request = urllib.request.Request(
         UPLOAD_URL,
@@ -100,8 +154,11 @@ def _upload(size: int) -> float:
         headers={**HEADERS, "Content-Type": "application/octet-stream"},
     )
     started = time.perf_counter()
-    with urllib.request.urlopen(request, timeout=60):
-        pass
+    try:
+        with urllib.request.urlopen(request, timeout=60):
+            pass
+    except (OSError, urllib.error.HTTPError):
+        return None
     return size / max(1e-6, time.perf_counter() - started)
 
 
@@ -110,7 +167,7 @@ def run_speedtest(
     source: str,
     *,
     download: Callable[[int], float] = _download,
-    upload: Callable[[int], float] = _upload,
+    upload: Callable[[int], float | None] = _upload,
 ) -> SpeedResult:
     started = time.perf_counter()
     down = download(DOWN_BYTES)
@@ -120,8 +177,11 @@ def run_speedtest(
     budget = int(min(UP_BYTES, max(500_000, down * MAX_SECONDS_PER_DIRECTION)))
     up = upload(budget)
     result = SpeedResult(down_bytes_s=down, up_bytes_s=up, seconds=time.perf_counter() - started)
-    store.record(
-        source,
-        {"speedtest.down_bytes_s": result.down_bytes_s, "speedtest.up_bytes_s": result.up_bytes_s},
-    )
+    # An unmeasured direction records nothing rather than a zero. A zero here would be
+    # charted as a link that managed no upload at all, and would drag every average
+    # taken over it down towards a speed nothing ever ran at.
+    recorded = {"speedtest.down_bytes_s": result.down_bytes_s}
+    if result.up_bytes_s is not None:
+        recorded["speedtest.up_bytes_s"] = result.up_bytes_s
+    store.record(source, recorded)
     return result
