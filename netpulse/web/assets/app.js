@@ -178,8 +178,14 @@ function openFromHash() {
 const ready = refresh().catch(error => reportFailure("Some panels failed to load", error));
 openFromHash();
 window.addEventListener("hashchange", openFromHash);
-setInterval(refresh, 15000);
-try {
+if (!STATIC) setInterval(refresh, 15000);
+/* `?static=1` holds the page still: no live stream, no polling. It exists because a
+   headless browser captures when loading finishes, and a page with an open EventSource
+   never finishes — which makes the dashboard impossible to screenshot reliably, for
+   documentation or for a rendering check in CI. */
+const STATIC = new URLSearchParams(location.search).has("static");
+
+if (!STATIC) try {
   const stream = new EventSource("/api/stream");
   let last = 0;
   stream.onmessage = () => { if (firstPaintDone && Date.now() - last > 4000) { last = Date.now(); refresh(); } };
