@@ -28,6 +28,12 @@ from netpulse.sources import AdapterError
 #: differenced from the cumulative counters. Counters are already near 2^32 on a
 #: fresh-ish session, so a wrap is a real possibility, not a theoretical one.
 COUNTER_WRAP = 2**32
+
+#: The firmware labels its flow figures "MB" and means **mebibytes**. Verified against
+#: the same connection's raw byte counter: wan_rx_bytes / flow_dl came back as
+#: 1,048,576.3 — 2**20, not 10**6. Reading it as decimal under-reports every data
+#: figure by 4.86%, which on a 100 GB plan is five gigabytes that never appear.
+MIB = 1024.0 * 1024.0
 RF_SWEEP_EVERY = 6
 
 Fetch = Callable[[str, bytes, dict[str, str]], bytes]
@@ -272,7 +278,7 @@ class ZltAdapter:
             monthly = _number(rf.get("mon_total_flow"))
             if monthly is not None:
                 # mon_total_flow is down+up together, so it must not wear a down label.
-                metrics["data.month_total_bytes"] = monthly * 1e6  # reported in MB
+                metrics["data.month_total_bytes"] = monthly * MIB
             for key, name in (
                 ("network_operator", "net.operator"),
                 ("currentband_5g", "signal.band_5g"),

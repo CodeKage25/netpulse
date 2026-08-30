@@ -205,3 +205,18 @@ def test_discovery_names_the_board_it_found() -> None:
     assert len(found) == 1
     assert found[0].kind == "zlt"
     assert found[0].label == "ZLT X17U"
+
+
+def test_monthly_data_is_read_as_mebibytes_not_megabytes() -> None:
+    """The firmware says "MB" and means MiB.
+
+    Established against the router itself: at one moment cmd 133 reported
+    5,845,246,789 raw bytes received while cmd 205 reported flow_dl of 5,574.46 "MB".
+    The ratio is 1,048,576 — two to the twentieth, not ten to the sixth. Reading it as
+    decimal under-reports every data figure by 4.86%, and the allowance meter is
+    exactly where a 5% error goes unnoticed until the plan runs out early.
+    """
+    reading = ZltAdapter("mtn", fetch=responder()).read()
+    # RF fixture reports mon_total_flow = "18988.77"
+    assert reading.metrics["data.month_total_bytes"] == pytest.approx(18988.77 * 1024 * 1024)
+    assert reading.metrics["data.month_total_bytes"] > 18988.77 * 1e6  # not decimal

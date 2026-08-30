@@ -22,13 +22,16 @@ const METRICS = {
   },
   "latency.internet_ms": {
     label: "Latency", unit: "ms", color: "--mono", fill: "--mono-fill",
-    tile: m => Math.round(m), caption: "to the internet, live",
+    tile: m => Math.round(m), caption: "TCP connect, live",
     chartFmt: fmt.ms, axisFmt: v => Math.round(v), floor: 0,
     explain: ["What is latency?",
-      "How long a small packet takes to reach the internet and come back. Video calls and " +
-      "games feel the spikes far more than the average, so the chart keeps the worst value " +
-      "in each bucket rather than smoothing it away — a spike averaged into a minute would " +
-      "read as perfectly fine."],
+      "How long it takes to open a connection to a well-known internet address and get " +
+      "an answer back. That is a TCP handshake rather than a ping, deliberately: ping " +
+      "asks whether a packet can make the trip, while this asks whether a connection " +
+      "can actually be established — which is what a browser, a call or a game has to " +
+      "do first. It therefore reads a little higher than ping, and notices problems " +
+      "ping cannot. Spikes matter far more than the average, so the chart keeps the " +
+      "worst value in each bucket rather than smoothing it away."],
   },
   "signal.rsrp_dbm": {
     label: "Signal", unit: "dBm", color: "--mono", fill: "--mono-fill",
