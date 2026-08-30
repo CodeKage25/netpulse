@@ -22,12 +22,13 @@ from typing import Any
 
 from netpulse.core.model import DeviceSeen, Reading
 from netpulse.core.radio import carriers, spectrum_metrics
+from netpulse.core.rates import Counters
 from netpulse.sources import AdapterError
 
 #: The firmware gives no rate field (netWanRxRate is empty here), so throughput is
 #: differenced from the cumulative counters. Counters are already near 2^32 on a
-#: fresh-ish session, so a wrap is a real possibility, not a theoretical one.
-COUNTER_WRAP = 2**32
+#: fresh-ish session, so a wrap is a real possibility, not a theoretical one — which is
+#: why the differencing lives in `core.rates` and is shared rather than reimplemented.
 
 #: The firmware labels its flow figures "MB" and means **mebibytes**. Verified against
 #: the same connection's raw byte counter: wan_rx_bytes / flow_dl came back as
@@ -112,7 +113,9 @@ class ZltAdapter:
         self._login_refused = False
         self._fetch = fetch
         self._cycle = 0
-        self._previous: tuple[float, float, float] | None = None  # rx, tx, uptime
+        # Uptime is the clock, not wall time: it rewinds visibly on a reboot, which is
+        # exactly the event that must not be published as a burst.
+        self._counters = Counters()
 
     def _login(self) -> str | None:
         """Sign in, returning a session id, or None if we cannot.
@@ -200,27 +203,7 @@ class ZltAdapter:
         counters alone. Either would otherwise be published as a multi-gigabyte burst
         that never happened, so both simply re-baseline and emit no rate this cycle.
         """
-        if rx is None or tx is None or uptime is None:
-            return {}
-        previous, self._previous = self._previous, (rx, tx, uptime)
-        if previous is None:
-            return {}
-        last_rx, last_tx, last_uptime = previous
-        elapsed = uptime - last_uptime
-        if elapsed <= 0:  # rebooted, or polled twice within the same second
-            return {}
-        deltas = []
-        for current, last in ((rx, last_rx), (tx, last_tx)):
-            delta = current - last
-            if delta < 0:
-                delta += COUNTER_WRAP
-                if delta < 0 or delta > COUNTER_WRAP / 2:
-                    return {}  # not a wrap — a reset; refuse to invent the traffic
-            deltas.append(delta)
-        return {
-            "traffic.down_bytes_s": deltas[0] / elapsed,
-            "traffic.up_bytes_s": deltas[1] / elapsed,
-        }
+        return self._counters.rates(rx, tx, uptime)
 
     def read(self) -> Reading:
         wan = self._command(133)

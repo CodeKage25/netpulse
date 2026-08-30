@@ -71,6 +71,10 @@ def build(kind: str, name: str, options: dict[str, Any]) -> Adapter:
         from netpulse.sources.netgear import NetgearAdapter
 
         return NetgearAdapter(name, **options)
+    if kind == "fastmile":
+        from netpulse.sources.fastmile import FastMileAdapter
+
+        return FastMileAdapter(name, **options)
     if kind == "snmp":
         from netpulse.sources.snmp_router import SnmpAdapter
 
@@ -81,5 +85,5 @@ def build(kind: str, name: str, options: dict[str, Any]) -> Adapter:
         return DemoAdapter(name, **options)
     raise ValueError(
         f"unknown adapter kind {kind!r}; available: "
-        "probe, huawei, zte, zlt, starlink, netgear, snmp, demo"
+        "probe, huawei, zte, zlt, starlink, netgear, fastmile, snmp, demo"
     )

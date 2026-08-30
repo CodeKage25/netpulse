@@ -252,11 +252,16 @@ VENDORS: tuple[Vendor, ...] = (
     ),
     Vendor(
         name="Nokia",
-        kind="",
+        kind="fastmile",
         addresses=("192.168.1.1", "192.168.0.1"),
-        signatures=(Signature("/overview_get_web_app.cgi"),),
+        signatures=(
+            # The radio endpoint first: it is the one the adapter reads, so a match
+            # here means the source it configures will work, not merely that a Nokia
+            # box is present.
+            Signature("/fastmile_radio_status_web_app.cgi"),
+            Signature("/overview_get_web_app.cgi"),
+        ),
         match=_match_fastmile,
-        note="FastMile publishes signal on an endpoint its own spec marks unauthenticated.",
     ),
     Vendor(
         name="Teltonika",
