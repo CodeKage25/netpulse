@@ -1,0 +1,54 @@
+# NetPulse, hosted half. Deploy this to *your own* Fly account:
+#
+#   fly launch --no-deploy --copy-config
+#   fly volumes create netpulse_data --size 3 --region jnb
+#   fly secrets set NETPULSE_DASHBOARD_TOKEN="$(openssl rand -base64 24)"
+#   fly secrets set NETPULSE_INGEST_TOKEN="$(openssl rand -base64 24)"
+#   fly deploy
+#
+# Then at home, on the machine that can see the router:
+#
+#   NETPULSE_INGEST_TOKEN='the ingest one' \
+#     netpulse run --push-to https://<your-app>.fly.dev --agent-name home
+#
+# The dashboard prompts for a password; the username is ignored, the password is
+# NETPULSE_DASHBOARD_TOKEN. Nothing in here measures anything — see the Dockerfile.
+
+app = "netpulse"
+primary_region = "jnb"   # closest Fly region to Lagos; move it nearer your agent
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  NETPULSE_DB = "/data/history.db"
+  BIND = "0.0.0.0"
+  PORT = "8080"
+
+[mounts]
+  source = "netpulse_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+
+  # Never suspended. The hosted side derives outages from the silence between an
+  # agent's pushes, and a machine that has been stopped cannot tell the difference
+  # between "the house is offline" and "I was asleep" — it would manufacture exactly
+  # the gaps this project refuses to paper over.
+  auto_stop_machines = false
+  auto_start_machines = false
+  min_machines_running = 1
+
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 40
+    hard_limit = 80
+
+# One machine, deliberately. Storage is SQLite on a volume, a volume attaches to a
+# single machine, and SQLite takes a single writer. A second machine would not share
+# the history — it would quietly keep a different one.
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

@@ -113,3 +113,20 @@ def test_an_empty_expected_token_never_matches(monkeypatch) -> None:  # type: ig
     monkeypatch.delenv(INGEST_ENV, raising=False)
     guard = Guard.from_env("127.0.0.1")
     assert guard.allows_agent("Bearer ") is False
+
+
+def test_the_database_path_follows_the_environment_even_with_no_config(
+    monkeypatch, tmp_path
+) -> None:  # type: ignore[no-untyped-def]
+    """A container has no config file — that *is* its path through `load` — and is told
+    where its volume is mounted by environment variable. Reading the variable only when
+    a file exists would send every hosted deployment's history to a directory thrown
+    away on the next restart, and it would look like it was working."""
+    from netpulse.config import load
+
+    monkeypatch.setenv("NETPULSE_DB", str(tmp_path / "history.db"))
+    assert load(tmp_path / "absent.toml").db_path == tmp_path / "history.db"
+
+    written = tmp_path / "netpulse.toml"
+    written.write_text('db = "/ignored/history.db"\n')
+    assert load(written).db_path == tmp_path / "history.db"

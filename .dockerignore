@@ -1,0 +1,13 @@
+.git
+.github
+.venv
+.mypy_cache
+.pytest_cache
+.ruff_cache
+tests
+docs
+tasks
+*.db
+*.db-wal
+*.db-shm
+.DS_Store

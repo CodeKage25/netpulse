@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import argparse
+import os
+import platform
 import sys
 import threading
 from datetime import timedelta
 from pathlib import Path
 
 from netpulse import __version__
+from netpulse.agent import Pusher
 from netpulse.alerting.alerts import AlertEngine
 from netpulse.alerting.channels import Channels
 from netpulse.alerting.notify import Notifier
@@ -18,6 +21,8 @@ from netpulse.core.clock import utcnow
 from netpulse.core.storage import Store
 from netpulse.monitor import Collector
 from netpulse.sources import Adapter, build
+from netpulse.web.auth import Misconfigured
+from netpulse.web.ingest import clean_agent
 from netpulse.web.server import Api, serve
 
 
@@ -85,11 +90,23 @@ def run(args: argparse.Namespace) -> int:
 
         threading.Thread(target=autodiscover, daemon=True).start()
 
-    port = args.port or config.port
-    httpd = serve(api, port)
+    pusher = _pusher(args, store)
+    if pusher is not None:
+        # A separate thread rather than a step in the poll loop: a slow or unreachable
+        # dashboard must never delay the measuring, which is the part that cannot be
+        # caught up afterwards.
+        threading.Thread(target=pusher.run, args=(stop,), daemon=True).start()
+        print(f"pushing readings to {pusher.url} as {pusher.name}")
+
+    # PORT and BIND come from the environment before the config file, because that is
+    # how a container is told where to listen and it has no config file to edit.
+    port = args.port or int(os.environ.get("PORT") or 0) or config.port
+    bind = args.bind or os.environ.get("BIND") or "127.0.0.1"
+    httpd = serve(api, port, bind)
     names = ", ".join(collector.sources)
     print(f"netpulse {__version__} — watching {names}")
-    print(f"dashboard on http://127.0.0.1:{port}   (Ctrl+C to stop)")
+    shown = "127.0.0.1" if bind in ("127.0.0.1", "::1") else bind
+    print(f"dashboard on http://{shown}:{port}   (Ctrl+C to stop)")
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
@@ -99,6 +116,30 @@ def run(args: argparse.Namespace) -> int:
         httpd.shutdown()
         store.close()
     return 0
+
+
+def _pusher(args: argparse.Namespace, store: Store) -> Pusher | None:
+    """The upstream pusher, when this install is an agent for a hosted dashboard.
+
+    The token is read from the environment only. A push token in the config file would
+    be one `git add .` away from being published, and unlike a password nobody would
+    notice it had been.
+    """
+    target = getattr(args, "push_to", "") or os.environ.get("NETPULSE_PUSH_TO", "")
+    if not target:
+        return None
+    token = os.environ.get("NETPULSE_INGEST_TOKEN", "").strip()
+    if not token:
+        raise SystemExit(
+            "push-to needs NETPULSE_INGEST_TOKEN set to the token the dashboard expects"
+        )
+    name = clean_agent(getattr(args, "agent_name", "") or platform.node().split(".")[0])
+    if not name:
+        raise SystemExit(
+            "--agent-name must be letters, digits, dashes or underscores: it becomes the "
+            "prefix that keeps this house's readings apart from another's"
+        )
+    return Pusher(store, target, token, name)
 
 
 def status(args: argparse.Namespace) -> int:
@@ -245,6 +286,25 @@ def main(argv: list[str] | None = None) -> int:
     running = commands.add_parser("run", help="record and serve the dashboard")
     running.add_argument("--port", type=int, default=None)
     running.add_argument("--demo", action="store_true", help="synthetic connection, no hardware")
+    running.add_argument(
+        "--bind",
+        default=None,
+        help="address to listen on (default 127.0.0.1). Anything else needs "
+        "NETPULSE_DASHBOARD_TOKEN set, and will refuse to start without it",
+    )
+    running.add_argument(
+        "--push-to",
+        default="",
+        metavar="URL",
+        help="also push readings to a hosted NetPulse, e.g. https://you.fly.dev. "
+        "Needs NETPULSE_INGEST_TOKEN. Measuring continues locally either way",
+    )
+    running.add_argument(
+        "--agent-name",
+        default="",
+        help="what this house calls itself upstream (default: this machine's hostname). "
+        "Becomes the prefix that keeps its sources apart from another agent's",
+    )
     running.set_defaults(handler=run)
 
     stat = commands.add_parser("status", help="latest reading per source")
@@ -279,6 +339,12 @@ def main(argv: list[str] | None = None) -> int:
         return int(args.handler(args))
     except KeyboardInterrupt:
         return 130
+    except Misconfigured as exc:
+        # The one error whose whole purpose is to be read and acted on. A traceback here
+        # buries the sentence that says what to do, and in a container it buries it in
+        # a log somebody has to go and find.
+        print(f"netpulse: {exc}", file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":

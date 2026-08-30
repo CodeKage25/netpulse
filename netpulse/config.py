@@ -62,6 +62,7 @@ the zero-setup story. A config adds router adapters:
 
 from __future__ import annotations
 
+import os
 import tomllib
 from contextlib import suppress
 from dataclasses import dataclass, field
@@ -162,10 +163,24 @@ def warn_if_exposed(location: Path | None = None) -> str:
     )
 
 
+def _db_path(configured: Any = None) -> Path:
+    """Where history lives. The environment wins over the file, and over the default.
+
+    A container is told where its volume is mounted this way and has no config file for
+    anyone to edit — and the no-config path below is exactly the container's path, so
+    reading the variable only when a file exists would send every hosted deployment's
+    history to a directory that is discarded when the machine restarts.
+    """
+    return Path(os.environ.get("NETPULSE_DB") or configured or DEFAULT_DB).expanduser()
+
+
 def load(path: Path | None = None) -> Config:
     location = path or DEFAULT_CONFIG
     if not location.exists():
-        return Config(sources=(SourceConfig(name="wan", kind="probe"),))
+        return Config(
+            sources=(SourceConfig(name="wan", kind="probe"),),
+            db_path=_db_path(),
+        )
 
     data = tomllib.loads(location.read_text())
     sources = tuple(
@@ -180,7 +195,7 @@ def load(path: Path | None = None) -> Config:
     return Config(
         sources=sources,
         interval_s=float(data.get("interval_s", 5.0)),
-        db_path=Path(data.get("db", DEFAULT_DB)).expanduser(),
+        db_path=_db_path(data.get("db")),
         port=int(data.get("port", 8787)),
         notifications=bool(data.get("notifications", True)),
         plan=_plan(data.get("plan", {})),
