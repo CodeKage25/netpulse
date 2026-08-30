@@ -1,0 +1,98 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A second push to the same branch cancels the first: the older run's verdict is about
+# code nobody has any more.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: tests · py${{ matrix.python }} · ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # Linux is where it runs on a Pi; macOS is where the per-application path uses
+        # nettop rather than ss. Both have to work, so both are tested.
+        os: [ubuntu-latest, macos-latest]
+        python: ["3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv python install ${{ matrix.python }}
+      - run: uv sync --python ${{ matrix.python }}
+      - name: Tests
+        run: uv run pytest -q
+      - name: The suite must not touch the network
+        # Every adapter takes an injectable fetch and every clock is injected, so the
+        # tests have no reason to open a socket. If one starts to, it will be flaky in
+        # somebody's CI long before it is flaky here.
+        run: uv run pytest -q -p no:cacheprovider
+        env:
+          # Any real DNS lookup fails against this, which is the point.
+          RES_OPTIONS: "timeout:1 attempts:1"
+
+  lint:
+    name: lint · types · format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync
+      - name: Ruff
+        run: uv run ruff check .
+      - name: Formatting
+        run: uv run ruff format --check .
+      - name: Types (strict)
+        run: uv run mypy netpulse/
+
+  dashboard:
+    name: dashboard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync
+      - name: Every script parses, separately and joined
+        # One syntax error blanks the page while every Python test still passes, and a
+        # `const` declared twice across two files only fails once they are concatenated.
+        run: uv run pytest -q tests/test_web.py
+
+  install:
+    name: installs clean with no dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install from source into a bare venv
+        run: |
+          python -m venv .venv
+          .venv/bin/pip install --quiet .
+      - name: It must pull in nothing else
+        # The zero-dependency promise is the reason this runs on a Raspberry Pi and the
+        # reason nothing upstream can break it. A test is the only way it stays true.
+        run: |
+          installed=$(.venv/bin/pip list --format=freeze | grep -v "^pip==\|^setuptools==\|^wheel==" | wc -l)
+          .venv/bin/pip list --format=freeze
+          test "$installed" -eq 1 || { echo "::error::netpulse pulled in dependencies"; exit 1; }
+      - name: The CLI runs
+        run: |
+          .venv/bin/netpulse --version
+          .venv/bin/netpulse --help > /dev/null
