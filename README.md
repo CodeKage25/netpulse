@@ -268,6 +268,40 @@ netpulse speedtest                    on-demand speed test
 
 ---
 
+## Running it somewhere else
+
+NetPulse measures a network from inside it. The router is on a private address nothing
+outside the house can reach, and the per-application figures come from the machine it
+runs on — so a copy in a datacentre would measure the datacentre.
+
+It therefore splits rather than moves. An agent stays home and does all the measuring; a
+hosted half keeps the history and serves the dashboard on a public URL.
+
+```bash
+# at home, on the machine that can see the router
+netpulse run --push-to https://your-app.fly.dev --agent-name home
+```
+
+The agent is an ordinary install, local dashboard included, with a second reader that
+ships its store upstream. The store *is* the queue, so a push that fails during an
+outage loses nothing — the backlog arrives with its own timestamps when the link
+returns. The hosted side then gains something the agent structurally cannot do: notice
+an outage while it is still happening, from the silence, because a monitor at home sits
+on the far side of its own break.
+
+Binding anything but loopback requires a password and **refuses to start** without one.
+`/api/block` writes to your router and `/api/speedtest` spends ~30 MB of metered data
+per call, so an unauthenticated public URL is someone else's button for kicking a
+household off its own network.
+
+**If you only want your dashboard from your phone, use Tailscale instead** — ten
+minutes, no code, nothing exposed. Deploy when you want history that outlives the
+laptop, or several agents reporting into one place. Full instructions, including why
+there are two tokens and why it stays on a single machine:
+**[docs/deploying.md](docs/deploying.md)**.
+
+---
+
 ## Architecture
 
 A strict DAG, and **[tests/test_architecture.py](tests/test_architecture.py) fails the
