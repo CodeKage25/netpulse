@@ -43,6 +43,21 @@ the zero-setup story. A config adds router adapters:
     [[channel]]
     kind = "ntfy"           # webhook · slack · discord · ntfy · home_assistant
     url = "https://ntfy.sh/my-private-topic"
+
+    [[rule]]
+    name = "kids tablets"
+    kind = "limit"          # limit · schedule · timer
+    devices = ["AA:BB:CC:DD:EE:01", "AA:BB:CC:DD:EE:02"]
+    limit_gb = 20
+    pooled = true           # one shared budget; they run out together
+    block = true            # opt-in: without it the rule reports and does not act
+
+    [[rule]]
+    name = "bedtime"
+    kind = "schedule"
+    devices = ["AA:BB:CC:DD:EE:01"]
+    windows = [{ from = "22:00", to = "07:00" }]
+    block = true
 """
 
 from __future__ import annotations
@@ -56,6 +71,8 @@ from typing import Any
 from netpulse.alerting.alerts import Rule, parse_rules
 from netpulse.alerting.channels import Channel, parse_channels
 from netpulse.analysis.allowance import Plan
+from netpulse.analysis.rules import Rule as DataRule
+from netpulse.analysis.rules import parse_rules as parse_data_rules
 
 DEFAULT_DIR = Path.home() / ".netpulse"
 DEFAULT_CONFIG = DEFAULT_DIR / "netpulse.toml"
@@ -78,6 +95,7 @@ class Config:
     notifications: bool = True
     plan: Plan = field(default_factory=lambda: Plan())
     alerts: tuple[Rule, ...] = ()
+    rules: tuple[DataRule, ...] = ()
     channels: tuple[Channel, ...] = ()
 
 
@@ -167,5 +185,6 @@ def load(path: Path | None = None) -> Config:
         notifications=bool(data.get("notifications", True)),
         plan=_plan(data.get("plan", {})),
         alerts=tuple(parse_rules(data.get("alert", []))),
+        rules=tuple(parse_data_rules(data.get("rule", []))),
         channels=tuple(parse_channels(data.get("channel", []))),
     )
