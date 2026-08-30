@@ -101,3 +101,30 @@ replacement. It then looked like the edit had been applied, because the *script*
 its progress. **Rule:** make edit scripts idempotent (`if X not in s`) and write after
 each successful replacement, or verify the file afterwards rather than trusting the
 script's own output.
+
+### Screenshots find bugs that reading code cannot — six in one pass
+The user sent seven screenshots of the running dashboard. They contained six real bugs
+that months of unit tests had not caught, because every one was a *disagreement between
+two things on the same screen* rather than a wrong value in isolation:
+
+- Latency reported the **worst of several anycast targets**, so one badly-routed
+  destination read as the connection's latency. Visible instantly as a square wave; a
+  five-fold overstatement that graded a healthy link F.
+- "Best −96 dBm, Worst −90 dBm" — extremes computed as min/max with no notion of which
+  direction is good.
+- The ping-success panel **plotted raw loss under a success heading**, so its chart
+  disagreed with its own figures, and its axis ran to 120%.
+- "Worst 0.0 Mbps" printed above an explainer saying an idle link reads near zero.
+- A tile showing 100% beside a sparkline spiking upward on every lost packet.
+- A deep link opening before sources resolved, querying "" and reading as "no data".
+
+**Rule:** for anything with a UI, render it and *look* — at full panels, not one number.
+Then read every figure against its neighbours and against its own caption. A value that
+is wrong on its own is rare; a value that contradicts the thing beside it is common, and
+only visible when both are on screen together.
+
+### A direction flag must say which value it describes
+`higherIsBetter` on a metric stored as loss but displayed as success inverted best/worst
+a second time. **Rule:** when a metric is stored one way up and shown the other, every
+flag about it must state explicitly whether it describes the stored or the displayed
+value — and the tests should pin that sentence, because the code reads correct either way.
