@@ -273,3 +273,35 @@ def test_device_addresses_are_normalised_to_upper_case() -> None:
 
     rule = parse_rules([{"kind": "limit", "devices": [PHONE.lower()], "limit_gb": 5}])[0]
     assert rule.devices == (PHONE,)
+
+
+def test_a_device_nobody_measured_is_not_a_device_at_zero(store: Store, clock: Clock) -> None:
+    """Enforcement treats unseen as unspent — refusing a device its network because
+    nobody measured it is the worse mistake — but the verdict must say which it is, or
+    a panel will draw an empty bar and call that a reading."""
+    rule = Rule("phone", Kind.LIMIT, (PHONE,), limit_bytes=10 * GB)
+    verdict = evaluate(store, "wan", rule, clock.now)[0]
+    assert verdict.holds is False
+    assert verdict.measured is False
+    assert "nothing recorded" in verdict.reason
+
+
+def test_an_idle_device_reads_the_same_as_an_unreported_one(store: Store, clock: Clock) -> None:
+    """The storage layer does not write a row for an interval that moved no bytes, so a
+    device seen idle and a device never seen are the same state on disk. Neither is a
+    measurement of zero, and the verdict says so for both — which is the honest answer,
+    not a limitation being papered over."""
+    spend(store, clock, PHONE, 0)
+    verdict = evaluate(store, "wan", Rule("phone", Kind.LIMIT, (PHONE,), limit_bytes=10 * GB),
+                       clock.now)[0]
+    assert verdict.measured is False
+    assert verdict.holds is False
+
+
+def test_a_pooled_rule_is_measured_when_any_member_was_seen(store: Store, clock: Clock) -> None:
+    """One quiet tablet in a group does not make the group's total unknown."""
+    spend(store, clock, PHONE, 2)
+    rule = Rule("kids", Kind.LIMIT, (PHONE, TABLET), limit_bytes=10 * GB, pooled=True)
+    verdict = evaluate(store, "wan", rule, clock.now)[0]
+    assert verdict.measured is True
+    assert verdict.used_bytes == 2 * GB

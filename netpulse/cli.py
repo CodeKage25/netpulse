@@ -63,6 +63,7 @@ def run(args: argparse.Namespace) -> int:
 
     api.persist_sources = persist
     api.plan = config.plan
+    api.data_rules = list(config.rules)
 
     stop = threading.Event()
     thread = threading.Thread(target=collector.run, args=(stop,), daemon=True)

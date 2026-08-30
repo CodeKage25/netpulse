@@ -68,6 +68,7 @@ document.getElementById("tracepath").addEventListener("click", showPath);
 document.getElementById("spectrum").addEventListener("click", showSpectrum);
 document.getElementById("network").addEventListener("click", showNetwork);
 document.getElementById("usage").addEventListener("click", showUsage);
+document.getElementById("rules").addEventListener("click", showRules);
 document.getElementById("alerts").addEventListener("click", () => {
   document.getElementById("events").scrollIntoView({ behavior: "smooth", block: "center" });
 });
@@ -158,7 +159,7 @@ window.addEventListener("resize", redraw);
 window.addEventListener("orientationchange", redraw);
 
 const OVERLAYS = { spectrum: showSpectrum, path: showPath, speedtests: showSpeedtests,
-                   network: showNetwork, usage: showUsage };
+                   network: showNetwork, usage: showUsage, rules: showRules };
 
 function openFromHash() {
   const target = location.hash.slice(1);
@@ -175,15 +176,21 @@ function openFromHash() {
    whatever it does. Kicking off a second refresh instead put twenty requests over the
    browser's six connections and left the view waiting on a queue behind the page that
    had already loaded. */
+/* `?static=1` holds the page still: no live stream, no polling. It exists because a
+   headless browser captures when loading finishes, and a page with an open EventSource
+   never finishes — which makes the dashboard impossible to screenshot reliably, for
+   documentation or for a rendering check in CI.
+
+   Declared before anything reads it. A `const` used above its own line throws on load,
+   and one thrown line here takes the rest of the file with it — which is how the flag
+   that exists to make the page screenshotable ended up in the screenshot, as an error
+   banner. */
+const STATIC = new URLSearchParams(location.search).has("static");
+
 const ready = refresh().catch(error => reportFailure("Some panels failed to load", error));
 openFromHash();
 window.addEventListener("hashchange", openFromHash);
 if (!STATIC) setInterval(refresh, 15000);
-/* `?static=1` holds the page still: no live stream, no polling. It exists because a
-   headless browser captures when loading finishes, and a page with an open EventSource
-   never finishes — which makes the dashboard impossible to screenshot reliably, for
-   documentation or for a rendering check in CI. */
-const STATIC = new URLSearchParams(location.search).has("static");
 
 if (!STATIC) try {
   const stream = new EventSource("/api/stream");

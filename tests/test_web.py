@@ -225,7 +225,7 @@ def test_a_view_opened_by_link_waits_on_readiness_not_on_success() -> None:
     already loaded."""
     app = code_of(ASSETS / "app.js")
     assert "const ready = refresh()" in app
-    for name in ("spectrum", "network", "usage"):
+    for name in ("spectrum", "network", "usage", "rules"):
         view = code_of(ASSETS / "views" / f"{name}.js")
         assert "await ready" in view, f"{name} does not wait on the shared readiness"
         assert "await refresh()" not in view, f"{name} starts a second refresh"
@@ -275,7 +275,7 @@ def test_a_percentage_chart_declares_its_ceiling() -> None:
 def test_every_linked_view_waits_for_a_resolved_source() -> None:
     """A deep link that opens before sources resolve queries the empty string, which
     returns nothing and reads as "no data" rather than "asked the wrong question"."""
-    for name in ("spectrum", "network", "usage", "detail"):
+    for name in ("spectrum", "network", "usage", "detail", "rules"):
         view = code_of(ASSETS / "views" / f"{name}.js")
         assert "await ready" in view, f"{name}.js does not wait for a source"
 
@@ -305,3 +305,38 @@ def test_a_tile_sparkline_shows_the_same_quantity_as_its_number() -> None:
     dashboard = code_of(ASSETS / "views" / "dashboard.js")
     assert "shownSeries(spec, sp[key])" in dashboard
     assert "spec.toChart" in dashboard
+
+
+def test_a_rule_that_only_reports_is_never_described_as_blocking() -> None:
+    """A rule without `block` watches an allowance and says when it is spent. Labelling
+    that "blocked" claims something about the network that is not true — the device is
+    still online, and someone reading the panel would go looking for a fault."""
+    view = code_of(ASSETS / "views" / "rules.js")
+    assert "rule.blocks" in view
+    assert "over — not blocking" in (ASSETS / "views" / "rules.js").read_text()
+
+
+def test_the_rules_view_asks_rather_than_remembers() -> None:
+    """A verdict is a statement about this moment. Showing a cached one after the
+    allowance rolled over would hold a device the rules no longer hold."""
+    view = code_of(ASSETS / "views" / "rules.js")
+    assert "/api/rules?source=" in view
+
+
+def test_an_unmeasured_allowance_is_never_drawn_as_an_empty_bar() -> None:
+    """A bar at 0% under a device the router never reported is a measurement claim, and
+    nothing made that measurement."""
+    view = code_of(ASSETS / "views" / "rules.js")
+    assert "rule.used_bytes == null" in view
+    assert "nothing measured for" in (ASSETS / "views" / "rules.js").read_text()
+
+
+def test_the_static_flag_is_declared_before_anything_reads_it() -> None:
+    """A `const` used above its own line throws on load, and one thrown line at the top
+    level takes the rest of the file with it. The flag that exists to make the page
+    screenshotable put an error banner in the screenshot instead."""
+    code = code_of(ASSETS / "app.js")
+    for name in re.findall(r"^const ([A-Z][A-Z_0-9]*) =", code, re.M):
+        assert code.index(name) == code.index(f"const {name} =") + len("const "), (
+            f"{name} is read before it is declared"
+        )

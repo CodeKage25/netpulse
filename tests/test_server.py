@@ -218,3 +218,39 @@ def test_the_distribution_reports_raw_extremes_not_bucketed_ones(
     assert dist["overflowing"] is True
     assert dist["bins"][-1]["hi"] < 1300.0
     assert sum(b["count"] for b in dist["bins"]) == dist["count"]
+
+
+def test_the_rules_endpoint_reports_each_verdict(store: Store, clock: Clock) -> None:
+    """The panel has no engine of its own; whatever enforcement decides is what the
+    screen must show, including the allowance already spent."""
+    from netpulse.analysis.rules import Kind, Rule
+
+    store.record_usage("mtn", "device", [("AA:BB:CC:DD:EE:01", 8e9, 0.0)], at=clock.now)
+    api = Api(store, Collector(store, [], clock=clock), interval_s=5, clock=clock)
+    api.data_rules = [
+        Rule("phone", Kind.LIMIT, ("AA:BB:CC:DD:EE:01",), limit_bytes=5e9, block=True)
+    ]
+
+    payload = api.rules("mtn")
+    assert payload["count"] == 1
+    rule = payload["rules"][0]
+    assert rule["holds"] is True
+    assert rule["blocks"] is True
+    assert rule["used_bytes"] == 8e9
+    assert rule["remaining_bytes"] == 0.0
+
+
+def test_a_rule_with_no_usage_recorded_reports_nothing_rather_than_zero(
+    store: Store, clock: Clock
+) -> None:
+    """Absent is not zero. A device the router never reported has not used 0 GB of its
+    allowance — nobody knows what it used, and a panel showing a full bar would be
+    quietly making that up."""
+    from netpulse.analysis.rules import Kind, Rule
+
+    api = Api(store, Collector(store, [], clock=clock), interval_s=5, clock=clock)
+    api.data_rules = [Rule("phone", Kind.LIMIT, ("AA:BB:CC:DD:EE:09",), limit_bytes=5e9)]
+
+    rule = api.rules("mtn")["rules"][0]
+    assert rule["used_bytes"] is None
+    assert rule["holds"] is False

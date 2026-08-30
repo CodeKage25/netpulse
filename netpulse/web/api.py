@@ -27,6 +27,8 @@ from netpulse.analysis.export import prometheus, series, to_csv, to_json, uptime
 from netpulse.analysis.insights import diagnose
 from netpulse.analysis.path import analyse, trace
 from netpulse.analysis.quality import assess
+from netpulse.analysis.rules import Rule as DataRule
+from netpulse.analysis.rules import evaluate as evaluate_rule
 from netpulse.analysis.speedtest import TestHostUnavailable, run_speedtest
 from netpulse.config import SourceConfig
 from netpulse.core.clock import Clock, utcnow
@@ -59,6 +61,9 @@ class Api:
         self.persist_sources: Any = None
         #: The configured data plan, if any. Set by the runner; absent in tests.
         self.plan: Plan | None = None
+        #: Data rules, set by the runner from config. Evaluated on request, never
+        #: cached: a verdict is a statement about this moment.
+        self.data_rules: list[DataRule] = []
         #: Built on first use — sampling processes costs nothing until someone looks.
         self._apps: AppMonitor | None = None
         self._streams: list[queue.Queue[str]] = []
@@ -495,6 +500,34 @@ class Api:
             ],
             "host": platform.node(),
         }
+
+    def rules(self, source: str) -> dict[str, Any]:
+        """Every rule and what it says right now.
+
+        Recomputed on each request rather than cached: a verdict is a statement about
+        this moment, and a stale one is worse than none — it would show a device as
+        held after its allowance rolled over.
+        """
+        now = self._clock()
+        listed = []
+        for rule in self.data_rules:
+            for verdict in evaluate_rule(self.store, source, rule, now):
+                listed.append(
+                    {
+                        "name": rule.name,
+                        "kind": rule.kind.value,
+                        "devices": list(verdict.devices),
+                        "holds": verdict.holds,
+                        "reason": verdict.reason,
+                        "blocks": rule.block,
+                        "pooled": rule.pooled,
+                        "enabled": rule.enabled,
+                        "used_bytes": verdict.used_bytes if verdict.measured else None,
+                        "limit_bytes": rule.limit_bytes,
+                        "remaining_bytes": verdict.remaining_bytes,
+                    }
+                )
+        return {"rules": listed, "count": len(self.data_rules)}
 
     def quality(self, source: str) -> dict[str, Any]:
         graded = assess(self.store, source, self._clock())

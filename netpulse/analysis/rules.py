@@ -128,10 +128,18 @@ class Verdict:
     remaining_bytes: float | None = None
     #: Devices this verdict applies to — the whole group when pooled.
     devices: tuple[str, ...] = ()
+    #: LIMIT only: whether any covered device actually appeared in the usage table this
+    #: cycle. Enforcement treats an unseen device as having spent nothing — refusing a
+    #: device its network because nobody measured it would be the worse mistake — but a
+    #: panel must not then draw an empty bar and call it zero.
+    measured: bool = False
 
 
-def _used(store: Store, source: str, macs: tuple[str, ...], since: datetime) -> float:
-    """Bytes attributed to these devices since the cycle began.
+def _used(
+    store: Store, source: str, macs: tuple[str, ...], since: datetime
+) -> tuple[float, bool]:
+    """Bytes attributed to these devices since the cycle began, and whether any of them
+    were seen at all.
 
     Reads from recorded usage rather than a live counter, so a rule survives a restart
     with the same answer it had before — and cannot be reset by rebooting the router.
@@ -139,7 +147,8 @@ def _used(store: Store, source: str, macs: tuple[str, ...], since: datetime) -> 
     totals = dict(
         (key.upper(), down + up) for key, down, up in store.usage_by_key(source, "device", since)
     )
-    return sum(totals.get(mac.upper(), 0.0) for mac in macs)
+    seen = [totals[mac.upper()] for mac in macs if mac.upper() in totals]
+    return sum(seen), bool(seen)
 
 
 def evaluate(store: Store, source: str, rule: Rule, now: datetime) -> list[Verdict]:
@@ -179,30 +188,36 @@ def evaluate(store: Store, source: str, rule: Rule, now: datetime) -> list[Verdi
     if rule.pooled:
         # One budget for the group. Derived on every read and never stored, so no member
         # can hold a stale copy of what the others have spent.
-        used = _used(store, source, rule.devices, since)
+        used, measured = _used(store, source, rule.devices, since)
         over = used >= limit
         return [
             Verdict(
                 rule,
                 over,
-                f"{used / max(limit, 1) * 100:.0f}% of a shared allowance",
+                f"{used / max(limit, 1) * 100:.0f}% of a shared allowance"
+                if measured
+                else "nothing recorded for this group yet",
                 used,
                 max(0.0, limit - used),
                 rule.devices,
+                measured,
             )
         ]
     verdicts = []
     for mac in rule.devices:
-        used = _used(store, source, (mac,), since)
+        used, measured = _used(store, source, (mac,), since)
         over = used >= limit
         verdicts.append(
             Verdict(
                 rule,
                 over,
-                f"{used / max(limit, 1) * 100:.0f}% of its allowance",
+                f"{used / max(limit, 1) * 100:.0f}% of its allowance"
+                if measured
+                else "nothing recorded yet",
                 used,
                 max(0.0, limit - used),
                 (mac,),
+                measured,
             )
         )
     return verdicts
