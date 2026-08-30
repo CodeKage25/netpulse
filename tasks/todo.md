@@ -84,3 +84,30 @@ Bugs found while building, in the honest column:
 - Federation — the real answer to per-device usage the CPE firmware cannot report.
 - Week-over-week anomaly detection; scheduled speed tests.
 - The running instance needs a restart to pick up the grade and jitter fixes.
+
+## Deploying: home agent → hosted dashboard on Fly
+
+The router and the devices are only reachable from inside the house, so the measuring
+stays there and only the *answers* travel. Fly holds history and serves the dashboard.
+
+- [ ] **Auth, first and non-negotiable.** `POST /api/block` writes to somebody's router
+      and `POST /api/speedtest` spends ~30 MB of metered data per call. Binding anything
+      other than loopback without a token must be *refused at startup*, not merely
+      discouraged — the dangerous configuration should be impossible rather than
+      available. Basic auth for people, bearer token for agents, `compare_digest` for
+      both.
+- [ ] **Cursor reads on the store.** `after(table, rowid)` so the agent can walk forward
+      through what it has recorded.
+- [ ] **`POST /api/ingest`.** Replays an agent's rows with their original timestamps.
+      Idempotent by cursor: the server remembers the highest rowid applied per agent and
+      skips anything at or below it, so a retry costs nothing and cannot double-count
+      usage.
+- [ ] **Agent mode.** Keeps its local store and pushes forward from its cursor. This is
+      the whole point of buffering: the push travels over the link being measured, so
+      during an outage it fails — and an outage's readings are exactly the ones worth
+      keeping. They arrive when the link returns.
+- [ ] **Outages derived from silence.** A home monitor cannot report an outage while it
+      is having one; it is offline. The hosted side sees the gap in pushes and opens the
+      event itself. This is a capability the split *gains*, not a compromise it makes.
+- [ ] Dockerfile, fly.toml, a volume for the SQLite file, `min_machines_running = 1` so
+      the collector is never suspended, and docs.

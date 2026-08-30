@@ -7,6 +7,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any, ClassVar
 
 from netpulse.core.clock import Clock, utcnow
 from netpulse.core.model import (
@@ -80,6 +81,17 @@ CREATE TABLE IF NOT EXISTS events (
     detail TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS events_open ON events (source, kind, ended_at);
+
+-- How far each pushing agent has got, per stream. Persisted rather than held in memory
+-- so restarting the server does not ask every agent to resend its whole history, which
+-- over a metered link is a bill rather than an inconvenience.
+CREATE TABLE IF NOT EXISTS agent_cursors (
+    agent   TEXT NOT NULL,
+    stream  TEXT NOT NULL,
+    cursor  INTEGER NOT NULL,
+    seen_at TEXT NOT NULL,
+    PRIMARY KEY (agent, stream)
+);
 """
 
 
@@ -205,6 +217,80 @@ class Store:
                 "INSERT INTO devices (at, source, mac, name, ip) VALUES (?, ?, ?, ?, ?)",
                 [(moment, source, d.mac, d.name, d.ip) for d in devices],
             )
+
+    #: Tables an agent replays upstream, with the columns that go with each. A whitelist
+    #: rather than an f-string over whatever was asked for: `after` takes a table name,
+    #: and a table name interpolated into SQL is how this file would grow an injection.
+    SHIPPABLE: ClassVar[dict[str, tuple[str, ...]]] = {
+        "samples": ("at", "source", "metric", "value"),
+        "texts": ("at", "source", "metric", "value"),
+        "usage": ("at", "source", "kind", "key", "down", "up"),
+        "devices": ("at", "source", "mac", "name", "ip"),
+    }
+
+    def after(
+        self, table: str, cursor: int, limit: int = 5000
+    ) -> tuple[list[tuple[Any, ...]], int]:
+        """Rows written after `cursor`, and the cursor to ask with next time.
+
+        Keyed on rowid rather than on time. A clock that steps backwards — an NTP
+        correction, a laptop waking in a new timezone — makes a timestamp cursor skip
+        rows or repeat them, and this is the path an outage's readings travel down once
+        the link comes back. Those are the readings most worth keeping.
+        """
+        columns = self.SHIPPABLE.get(table)
+        if columns is None:
+            raise ValueError(f"{table} is not shippable")
+        selected = ", ".join(columns)
+        with self._lock:
+            rows = self._conn.execute(
+                f"SELECT rowid, {selected} FROM {table} "
+                "WHERE rowid > ? ORDER BY rowid LIMIT ?",
+                (cursor, limit),
+            ).fetchall()
+        if not rows:
+            return [], cursor
+        return [tuple(row)[1:] for row in rows], int(rows[-1][0])
+
+    def agent_cursor(self, agent: str, stream: str) -> int:
+        """How far this agent's stream has already been applied. 0 when never seen."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT cursor FROM agent_cursors WHERE agent = ? AND stream = ?",
+                (agent, stream),
+            ).fetchone()
+        return int(row["cursor"]) if row else 0
+
+    def advance_agent(self, agent: str, stream: str, cursor: int, at: datetime) -> None:
+        """Record that everything up to `cursor` has been applied."""
+        with self._tx() as conn:
+            conn.execute(
+                "INSERT INTO agent_cursors (agent, stream, cursor, seen_at) "
+                "VALUES (?, ?, ?, ?) ON CONFLICT(agent, stream) DO UPDATE SET "
+                # max() so a retry arriving out of order cannot rewind the cursor and
+                # reopen the door to rows that were already written.
+                "cursor = max(cursor, excluded.cursor), seen_at = excluded.seen_at",
+                (agent, stream, cursor, _ts(at)),
+            )
+
+    def agents_last_seen(self) -> dict[str, datetime]:
+        """When each agent last pushed anything.
+
+        This is what lets the hosted side notice an outage the agent cannot report. A
+        monitor at home goes quiet during its own outage — it is on the far side of the
+        break — so silence here carries information rather than lacking it.
+        """
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT agent, max(seen_at) AS seen FROM agent_cursors GROUP BY agent"
+            ).fetchall()
+        found: dict[str, datetime] = {}
+        for row in rows:
+            try:
+                found[row["agent"]] = _dt(row["seen"])
+            except (TypeError, ValueError):
+                continue
+        return found
 
     def record_usage(
         self,

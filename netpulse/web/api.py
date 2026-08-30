@@ -39,8 +39,14 @@ from netpulse.core.storage import Store
 from netpulse.monitor import Collector
 from netpulse.sources import Blocker, build
 from netpulse.sources.discover import discover
+from netpulse.web.ingest import Ingest
 
 SPARK_POINTS = 30
+
+#: How long an agent may be quiet before the dashboard calls it stale. Several missed
+#: pushes rather than one: a single late push is a slow minute, a run of them is the
+#: link being gone.
+AGENT_SILENCE_S = 5 * 60.0
 
 
 class Api:
@@ -67,6 +73,8 @@ class Api:
         self.data_rules: list[DataRule] = []
         #: Built on first use — sampling processes costs nothing until someone looks.
         self._apps: AppMonitor | None = None
+        #: Built on first push — an instance with no agents never creates the machinery.
+        self._ingest: Ingest | None = None
         self._streams: list[queue.Queue[str]] = []
         self._streams_lock = threading.Lock()
         collector.subscribe(self._publish)
@@ -648,6 +656,40 @@ class Api:
         if self.persist_sources is not None:
             self.persist_sources(source)
         return {"added": source.name}
+
+    def ingest(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Apply a batch of readings an agent measured on a network we cannot reach.
+
+        Built on first use so an instance that never accepts agents never creates the
+        machinery for them.
+        """
+        if self._ingest is None:
+            self._ingest = Ingest(self.store)
+        return self._ingest.apply(payload, self._clock()).as_json()
+
+    def agents(self) -> dict[str, Any]:
+        """Every agent that has ever pushed, and how long ago it last did.
+
+        Silence is the point of this endpoint. An agent stops pushing when the link it
+        is watching goes down, which is precisely when it cannot tell anyone — it is on
+        the far side of the break. The hosted side is the only one in a position to
+        notice, so a gap here is reported as a finding rather than as missing data.
+        """
+        now = self._clock()
+        found = []
+        for name, seen in sorted(self.store.agents_last_seen().items()):
+            silent_for = (now - seen).total_seconds()
+            found.append(
+                {
+                    "agent": name,
+                    "last_push": seen.isoformat(),
+                    "silent_s": round(silent_for, 1),
+                    # Several pushes missed in a row, not one. A single late push is a
+                    # slow minute; a run of them is the link being gone.
+                    "stale": silent_for > AGENT_SILENCE_S,
+                }
+            )
+        return {"agents": found, "silence_threshold_s": AGENT_SILENCE_S}
 
     def speedtest(self, source: str) -> dict[str, Any]:
         try:
