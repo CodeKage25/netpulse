@@ -23,7 +23,7 @@ from netpulse.analysis.allowance import Plan
 from netpulse.analysis.allowance import assess as assess_allowance
 from netpulse.analysis.allowance import by_day as usage_by_day
 from netpulse.analysis.apps import AppMonitor
-from netpulse.analysis.export import prometheus, series, to_csv, to_json, uptime_report
+from netpulse.analysis.export import prometheus, series, to_csv, to_json, uptime, uptime_report
 from netpulse.analysis.insights import diagnose
 from netpulse.analysis.path import analyse, trace
 from netpulse.analysis.quality import assess
@@ -108,16 +108,14 @@ class Api:
         return {"sources": sources, "now": now.isoformat()}
 
     def _uptime(self, source: str, now: datetime) -> float | None:
-        """Fraction of *recorded* polls that were up — per poll, never per bucket.
+        """Uptime over the last day, weighted by time rather than by poll count.
 
-        Bucketing first would let one bad minute zero a day (up buckets by MIN so charts
-        show any failure), which is exactly the distortion a summary figure must not
-        inherit. Unrecorded time is excluded, not assumed up; coverage says how much of
-        the day this figure actually covers."""
-        polls = self.store.values(source, "up", now - timedelta(hours=24), now)
-        if not polls:
-            return None
-        return sum(1 for value in polls if value >= 1.0) / len(polls)
+        Counting polls flatters the figure badly: the collector backs off while a source
+        fails, so one down poll covers far more wall clock than one up poll. Unrecorded
+        time is excluded rather than assumed up; coverage says how much of the day this
+        stands on."""
+        fraction, _, _ = uptime(self.store, source, now - timedelta(hours=24), now, self.interval_s)
+        return fraction
 
     def devices(self, source: str, hours: float) -> dict[str, Any]:
         return {

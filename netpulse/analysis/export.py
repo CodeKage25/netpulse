@@ -171,6 +171,50 @@ def to_json(header: list[str], rows: list[list[Any]], source: str, coverage: flo
     )
 
 
+def uptime(
+    store: Store, source: str, since: datetime, until: datetime, interval_s: float
+) -> tuple[float | None, float, float]:
+    """Uptime as a fraction of *time*, plus the seconds up and down behind it.
+
+    Counting polls is the obvious implementation and it is wrong, because the collector
+    backs off while a source is failing: one down poll covers far more wall clock than
+    one up poll, so treating them as equal makes an outage barely dent the figure. On a
+    real day this read 99.17% where the truth was 79.89% — a nineteen-point error in the
+    flattering direction, which is the worst way for a monitor to be wrong.
+
+    Time up is counted from polls, which are regular while things work; time down comes
+    from the outage events, which know exactly how long they lasted. Uptime is the ratio
+    over the period actually observed, not over the whole window.
+    """
+    polls = store.stamped(source, "up", since, until)
+    if not polls:
+        return None, 0.0, 0.0
+
+    spans = [
+        (max(event.started_at, since), min(event.ended_at or until, until))
+        # Overlapping, not merely starting-within: an outage that began before this
+        # window is the one a report most needs to see.
+        for event in store.events_overlapping(source, since, until)
+        if event.kind.value == "outage"
+    ]
+    down_seconds = sum(max(0.0, (end - start).total_seconds()) for start, end in spans)
+
+    up_seconds = 0.0
+    for at, value in polls:
+        if value >= 1.0:
+            up_seconds += interval_s
+        elif not any(start <= at <= end for start, end in spans):
+            # A failed poll that never became an outage — a blip too short to declare
+            # one. It is still time the connection was not working, and dropping it
+            # would report a link that fails every other minute as flawless.
+            down_seconds += interval_s
+
+    observed = up_seconds + down_seconds
+    if observed <= 0:
+        return None, 0.0, 0.0
+    return up_seconds / observed, up_seconds, down_seconds
+
+
 def uptime_report(
     store: Store, source: str, since: datetime, until: datetime, interval_s: float
 ) -> dict[str, Any]:
@@ -184,16 +228,24 @@ def uptime_report(
     polls = store.values(source, "up", since, until)
     coverage = store.coverage(source, since, until, interval_s)
     outages = [
-        event for event in store.events(source=source, since=since) if event.kind.value == "outage"
+        # Overlapping, like uptime(): an outage that began before this window still
+        # cost time inside it, and a report that misses it undercounts the damage.
+        event
+        for event in store.events_overlapping(source, since, until)
+        if event.kind.value == "outage"
     ]
+    # Clipped to the window: an outage may have begun before it or still be running.
     downtime = sum(
-        ((event.ended_at or until) - event.started_at).total_seconds() for event in outages
+        (min(event.ended_at or until, until) - max(event.started_at, since)).total_seconds()
+        for event in outages
     )
+    fraction, up_seconds, down_seconds = uptime(store, source, since, until, interval_s)
     return {
         "source": source,
         "from": since.isoformat(),
         "to": until.isoformat(),
-        "uptime": (sum(1 for value in polls if value >= 1.0) / len(polls)) if polls else None,
+        "uptime": fraction,
+        "observed_seconds": round(up_seconds + down_seconds),
         "coverage": coverage.fraction,
         "polls_recorded": len(polls),
         "outages": len(outages),

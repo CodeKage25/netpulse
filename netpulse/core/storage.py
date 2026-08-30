@@ -123,6 +123,18 @@ class _Stat:
         return self.sum / self.count
 
 
+def _event(row: sqlite3.Row) -> Event:
+    return Event(
+        id=row["id"],
+        source=row["source"],
+        kind=EventKind(row["kind"]),
+        severity=Severity(row["severity"]),
+        started_at=_dt(row["started_at"]),
+        ended_at=_dt(row["ended_at"]) if row["ended_at"] else None,
+        detail=row["detail"],
+    )
+
+
 class Store:
     """Append-only local history with an honest rollup ladder.
 
@@ -519,6 +531,21 @@ class Store:
                 (_ts(at or self._clock()), event_id),
             )
 
+    def events_overlapping(self, source: str, since: datetime, until: datetime) -> list[Event]:
+        """Every event whose span touches the window, not merely those that began in it.
+
+        An outage that started before the window — or is still running — is exactly the
+        one a report must not miss: asking for "the last 24 hours" during a day-long
+        outage would otherwise find no events at all and report perfect uptime.
+        """
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM events WHERE source = ? AND started_at < ? "
+                "AND (ended_at IS NULL OR ended_at >= ?) ORDER BY started_at",
+                (source, _ts(until), _ts(since)),
+            ).fetchall()
+        return [_event(row) for row in rows]
+
     def events(
         self,
         source: str | None = None,
@@ -541,18 +568,7 @@ class Store:
                 "ORDER BY started_at DESC LIMIT ?",
                 (*params, limit),
             ).fetchall()
-        return [
-            Event(
-                id=row["id"],
-                source=row["source"],
-                kind=EventKind(row["kind"]),
-                severity=Severity(row["severity"]),
-                started_at=_dt(row["started_at"]),
-                ended_at=_dt(row["ended_at"]) if row["ended_at"] else None,
-                detail=row["detail"],
-            )
-            for row in rows
-        ]
+        return [_event(row) for row in rows]
 
     def close(self) -> None:
         with self._lock:

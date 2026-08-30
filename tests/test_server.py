@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import urllib.request
+from datetime import timedelta
 
 import pytest
 
@@ -129,24 +130,65 @@ def test_a_source_can_be_added_while_running(served: str) -> None:
     assert "mtn" in names  # note: added source appears after its first poll records
 
 
-def test_uptime_is_a_poll_fraction_not_a_bucket_minimum(store: Store, clock: Clock) -> None:
-    """One bad minute in an otherwise clean day must read ~96%, not 0%."""
-    from netpulse.monitor import Collector
-    from netpulse.sources.fake import ScriptedAdapter
-    from netpulse.web.server import Api
+def test_uptime_counts_time_not_polls(store: Store, clock: Clock) -> None:
+    """The collector backs off while a source fails, so one down poll covers far more
+    wall clock than one up poll. Counting polls read 99.17% on a real day where the
+    truth was 79.89% — nineteen points, in the flattering direction."""
+    from netpulse.analysis.export import uptime
+    from netpulse.core.model import EventKind, Severity
 
-    for i in range(300):
-        store.record("wan", {"up": 0.0 if 100 <= i < 112 else 1.0})
+    for _ in range(60):  # five minutes up, polled every five seconds
+        store.record("wan", {"up": 1.0})
         clock.advance(seconds=5)
-    api = Api(
-        store,
-        Collector(store, [ScriptedAdapter("wan", [])], clock=clock),
-        interval_s=5,
-        clock=clock,
+
+    # Five minutes down, but backed off to only four polls in that time.
+    started = clock.now
+    event = store.open_event("wan", EventKind.OUTAGE, Severity.CRITICAL, "down", at=started)
+    for _ in range(4):
+        store.record("wan", {"up": 0.0})
+        clock.advance(seconds=75)
+    store.close_event(event, at=clock.now)
+
+    fraction, up_seconds, down_seconds = uptime(
+        store, "wan", started - timedelta(minutes=10), clock.now, interval_s=5.0
     )
-    uptime = api._uptime("wan", clock.now)
-    assert uptime is not None
-    assert 0.94 < uptime < 0.98
+    assert up_seconds == 300.0
+    assert down_seconds == 300.0
+    assert fraction == pytest.approx(0.5)
+    # Counting polls would have said 60/64 = 94%, because four polls spanned five minutes.
+
+
+def test_a_blip_too_short_to_be_an_outage_still_costs_uptime(store: Store, clock: Clock) -> None:
+    """A link that fails every other minute without ever tripping the outage threshold
+    is not a flawless link."""
+    from netpulse.analysis.export import uptime
+
+    since = clock.now
+    for index in range(100):
+        store.record("wan", {"up": 0.0 if index % 10 == 0 else 1.0})
+        clock.advance(seconds=5)
+
+    fraction, _, down = uptime(store, "wan", since, clock.now, interval_s=5.0)
+    assert down == 50.0  # ten failed polls, no outage event opened
+    assert fraction == pytest.approx(0.9)
+
+
+def test_an_outage_beginning_before_the_window_is_clipped_to_it(store: Store, clock: Clock) -> None:
+    from netpulse.analysis.export import uptime
+    from netpulse.core.model import EventKind, Severity
+
+    long_ago = clock.now
+    event = store.open_event("wan", EventKind.OUTAGE, Severity.CRITICAL, "down", at=long_ago)
+    clock.advance(hours=2)
+    window_start = clock.now
+    clock.advance(minutes=10)
+    store.close_event(event, at=clock.now)
+    for _ in range(12):
+        store.record("wan", {"up": 1.0})
+        clock.advance(seconds=5)
+
+    _, _, down = uptime(store, "wan", window_start, clock.now, interval_s=5.0)
+    assert down == pytest.approx(600.0)  # the ten minutes inside the window, not 130
 
 
 def test_the_distribution_reports_raw_extremes_not_bucketed_ones(

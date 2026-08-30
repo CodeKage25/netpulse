@@ -294,3 +294,25 @@ def test_more_than_one_download_host_is_configured() -> None:
     assert len(DOWNLOAD_URLS) >= 2
     hosts = {url.split("/")[2] for url in DOWNLOAD_URLS}
     assert len(hosts) == len(DOWNLOAD_URLS), "fallbacks must be different hosts"
+
+
+def test_the_report_counts_an_outage_that_began_before_the_window(
+    store: Store, clock: Clock
+) -> None:
+    """Asking for "the last 24 hours" during a day-long outage must not find no events
+    and report a perfect day."""
+    from netpulse.core.model import EventKind, Severity
+
+    event = store.open_event("wan", EventKind.OUTAGE, Severity.CRITICAL, "down", at=clock.now)
+    clock.advance(hours=3)
+    window_start = clock.now
+    clock.advance(minutes=20)
+    store.close_event(event, at=clock.now)
+    for _ in range(12):
+        store.record("wan", {"up": 1.0})
+        clock.advance(seconds=5)
+
+    report = uptime_report(store, "wan", window_start, clock.now, interval_s=5.0)
+    assert report["outages"] == 1
+    assert report["downtime_seconds"] == 1200  # the 20 minutes inside, not the whole 200
+    assert report["uptime"] is not None and report["uptime"] < 0.1
