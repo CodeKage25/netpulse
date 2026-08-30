@@ -110,6 +110,88 @@ def test_a_spiky_link_is_marked_down_for_jitter(store: Store, clock: Clock) -> N
     assert graded.jitter_ms > 100
 
 
+def test_slow_drift_is_not_reported_as_jitter(store: Store, clock: Clock) -> None:
+    """A link at 20 ms all morning and 60 ms all evening has a large hourly standard
+    deviation and no jitter at all — every call on it was smooth. Grading the drift as
+    jitter is what failed a healthy connection: measured against the real hour it read
+    152.8 ms of jitter where consecutive readings moved by 5."""
+    seed_latency(store, clock, [20.0] * 100 + [60.0] * 100)
+    graded = assess(store, "wan", clock.now)
+    assert graded is not None
+    assert graded.jitter_ms < 5
+    assert graded.grade in ("A", "B")
+
+
+def test_a_measured_jitter_is_preferred_to_one_derived_from_latency(
+    store: Store, clock: Clock
+) -> None:
+    """The probe measures the spread within a single poll, of a single path. That is
+    the real quantity; anything computed from the latency series afterwards is an
+    approximation of it."""
+    for value in [30.0] * 60:
+        store.record("wan", {"latency.internet_ms": value, "loss.pct": 0.0, "up": 1.0,
+                             "jitter.internet_ms": 45.0})
+        clock.advance(seconds=5)
+    graded = assess(store, "wan", clock.now)
+    assert graded is not None
+    assert graded.jitter_ms == 45.0  # not 0.0, which the flat series would have given
+
+
+def test_a_stall_is_not_punished_twice(store: Store, clock: Clock) -> None:
+    """A few connects in a hundred taking a second is a tail, and the tail is what p99
+    scores. Letting the same stalls dominate jitter as well marks one event down twice —
+    which on the real link was the difference between an F and an A."""
+    for index in range(200):
+        stalled = index % 50 == 7  # 2%: isolated, enough to reach p99
+        store.record(
+            "wan",
+            {
+                "latency.internet_ms": 1000.0 if stalled else 20.0,
+                # What the probe measured within that poll, on the path it reported.
+                "jitter.internet_ms": 5.0,
+                "loss.pct": 0.0,
+                "up": 1.0,
+            },
+        )
+        clock.advance(seconds=5)
+    graded = assess(store, "wan", clock.now)
+    assert graded is not None
+    assert graded.p99_ms > 100  # the stalls are counted…
+    assert graded.jitter_ms == 5.0  # …once
+
+
+def test_p95_is_not_the_largest_sample(store: Store, clock: Clock) -> None:
+    """`int(n * 0.95)` indexes one place too high: on twenty samples it returns the
+    maximum and labels it the 95th percentile, which grades every link by its worst
+    moment."""
+    from netpulse.analysis.quality import _percentile
+
+    assert _percentile(list(range(1, 21)), 0.95) == 19
+    assert _percentile(list(range(1, 101)), 0.95) == 95
+    assert _percentile(list(range(1, 101)), 0.99) == 99
+
+
+def test_a_source_that_never_reports_loss_is_not_credited_with_none(
+    store: Store, clock: Clock
+) -> None:
+    """Absent is not zero. A router that says nothing about loss has not reported a
+    perfect link, and handing it a tenth of the grade for silence would flatter every
+    source that cannot measure it."""
+    for value in [400.0] * 60:  # bad enough that free credit would be visible
+        store.record("wan", {"latency.internet_ms": value, "up": 1.0})
+        clock.advance(seconds=5)
+    silent = assess(store, "wan", clock.now)
+
+    store.record("lan", {"latency.internet_ms": 400.0, "loss.pct": 0.0, "up": 1.0})
+    for value in [400.0] * 59:
+        clock.advance(seconds=5)
+        store.record("lan", {"latency.internet_ms": value, "loss.pct": 0.0, "up": 1.0})
+    perfect = assess(store, "lan", clock.now)
+
+    assert silent is not None and perfect is not None
+    assert silent.score < perfect.score
+
+
 def test_too_little_history_gives_no_grade_rather_than_a_rash_one(
     store: Store, clock: Clock
 ) -> None:

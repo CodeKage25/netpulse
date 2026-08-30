@@ -138,14 +138,19 @@ class ProbeAdapter:
             metrics["latency.internet_worst_ms"] = max(timings)
             if len(timings) > 1:
                 # Jitter across different destinations would measure the gap between
-                # them, so it is computed per target and the worst one reported.
+                # them, so it is computed per target — and reported for the same target
+                # the latency above came from. Taking the worst spread of any target
+                # repeats the mistake the line above fixes: it describes whichever path
+                # happened to be worst rather than the path being reported. Measured
+                # from Lagos, 8.8.8.8 sits at 20 ms and 1.1.1.1 at 144 ms, and the two
+                # stall at different moments.
                 per_target: dict[str, list[float]] = {}
                 for index, value in enumerate(timings):
                     host, _ = INTERNET_TARGETS[index % len(INTERNET_TARGETS)]
                     per_target.setdefault(host, []).append(value)
-                spreads = [pstdev(values) for values in per_target.values() if len(values) > 1]
-                if spreads:
-                    metrics["jitter.internet_ms"] = max(spreads)
+                nearest = min(per_target, key=lambda host: min(per_target[host]))
+                if len(per_target[nearest]) > 1:
+                    metrics["jitter.internet_ms"] = pstdev(per_target[nearest])
         metrics["loss.pct"] = 100.0 * failures / ATTEMPTS
 
         for resolver in DNS_TARGETS:
