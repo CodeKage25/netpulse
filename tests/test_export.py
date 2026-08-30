@@ -7,6 +7,8 @@ import io
 import json
 from datetime import timedelta
 
+import pytest
+
 from netpulse.analysis.export import prometheus, series, to_csv, to_json, uptime_report
 from netpulse.core.model import EventKind, Severity
 from netpulse.core.storage import Store
@@ -221,3 +223,74 @@ def test_a_run_with_no_upload_reading_says_so_rather_than_zero(store: Store, clo
     store.record("wan", {"speedtest.down_bytes_s": 5e6})
     history = api_for(store, clock).speedtest_history("wan", days=30)
     assert history["runs"][0]["up_mbps"] is None
+
+
+# ------------------------------------------------------------------ speed test hosts
+
+
+def test_a_refusing_host_falls_through_to_the_next() -> None:
+    """Cloudflare returned 403 to identical requests twenty minutes apart. One host is
+    a single point of failure for a feature people judge the whole tool by."""
+    import urllib.error
+
+    from netpulse.analysis import speedtest
+
+    tried: list[str] = []
+    original = speedtest.urllib.request.urlopen
+
+    class Body:
+        def __init__(self) -> None:
+            self.left = 3
+
+        def read(self, _size: int) -> bytes:
+            self.left -= 1
+            return b"x" * 65536 if self.left > 0 else b""
+
+        def __enter__(self):  # type: ignore[no-untyped-def]
+            return self
+
+        def __exit__(self, *_):  # type: ignore[no-untyped-def]
+            return False
+
+    def refuse_first(request, timeout=0):  # type: ignore[no-untyped-def]
+        tried.append(request.full_url)
+        if len(tried) == 1:
+            raise urllib.error.HTTPError(request.full_url, 403, "Forbidden", {}, None)
+        return Body()
+
+    speedtest.urllib.request.urlopen = refuse_first  # type: ignore[assignment]
+    try:
+        rate = speedtest._download(1_000_000)
+    finally:
+        speedtest.urllib.request.urlopen = original  # type: ignore[assignment]
+    assert rate > 0
+    assert len(tried) == 2, "it should have moved on to the second host"
+
+
+def test_every_host_refusing_is_not_reported_as_a_broken_connection() -> None:
+    """The connection carried the refusal perfectly well. Blaming it would be the one
+    lie a monitoring tool must never tell."""
+    import urllib.error
+
+    from netpulse.analysis import speedtest
+    from netpulse.analysis.speedtest import TestHostUnavailable
+
+    original = speedtest.urllib.request.urlopen
+
+    def refuse(request, timeout=0):  # type: ignore[no-untyped-def]
+        raise urllib.error.HTTPError(request.full_url, 429, "Too Many Requests", {}, None)
+
+    speedtest.urllib.request.urlopen = refuse  # type: ignore[assignment]
+    try:
+        with pytest.raises(TestHostUnavailable, match="429"):
+            speedtest._download(1_000_000)
+    finally:
+        speedtest.urllib.request.urlopen = original  # type: ignore[assignment]
+
+
+def test_more_than_one_download_host_is_configured() -> None:
+    from netpulse.analysis.speedtest import DOWNLOAD_URLS
+
+    assert len(DOWNLOAD_URLS) >= 2
+    hosts = {url.split("/")[2] for url in DOWNLOAD_URLS}
+    assert len(hosts) == len(DOWNLOAD_URLS), "fallbacks must be different hosts"

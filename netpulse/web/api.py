@@ -27,7 +27,7 @@ from netpulse.analysis.export import prometheus, series, to_csv, to_json, uptime
 from netpulse.analysis.insights import diagnose
 from netpulse.analysis.path import analyse, trace
 from netpulse.analysis.quality import assess
-from netpulse.analysis.speedtest import run_speedtest
+from netpulse.analysis.speedtest import TestHostUnavailable, run_speedtest
 from netpulse.config import SourceConfig
 from netpulse.core.clock import Clock, utcnow
 from netpulse.core.host import local_macs
@@ -541,7 +541,12 @@ class Api:
         return {"added": source.name}
 
     def speedtest(self, source: str) -> dict[str, Any]:
-        result = run_speedtest(self.store, source)
+        try:
+            result = run_speedtest(self.store, source)
+        except TestHostUnavailable as exc:
+            # Deliberately not "the speed test failed": the connection carried the
+            # refusal perfectly well, and saying otherwise would blame the wrong thing.
+            return {"error": f"No measurement host would answer ({exc}). Your connection is fine."}
         return {
             "down_mbps": round(result.down_mbps, 1),
             "up_mbps": round(result.up_mbps, 1),

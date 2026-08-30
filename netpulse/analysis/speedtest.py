@@ -8,13 +8,23 @@ asks, is told the cost, and the result is recorded so history can chart it.
 from __future__ import annotations
 
 import time
+import urllib.error
 import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass
+from urllib.parse import urlsplit
 
 from netpulse.core.storage import Store
 
-DOWNLOAD_URL = "https://speed.cloudflare.com/__down?bytes={size}"
+#: Download targets, tried in order. More than one on purpose: a single third-party
+#: host that rate-limits turns "the test host refused us" into "your connection is
+#: broken", which is the one lie a monitoring tool must never tell. Cloudflare was
+#: observed returning 403 to identical requests twenty minutes apart.
+DOWNLOAD_URLS = (
+    "https://speed.cloudflare.com/__down?bytes={size}",
+    "https://cachefly.cachefly.net/10mb.test",
+    "https://proof.ovh.net/files/10Mb.dat",
+)
 UPLOAD_URL = "https://speed.cloudflare.com/__up"
 
 #: Cloudflare refuses requests with no User-Agent — 403, not a network error, so it
@@ -47,16 +57,37 @@ class SpeedResult:
         return self.up_bytes_s * 8 / 1e6
 
 
+class TestHostUnavailable(Exception):
+    """No measurement host would answer — which is not a statement about the link.
+
+    Distinct from a connection failure on purpose. Reporting a third party's rate limit
+    as "your connection is down" is exactly the error a monitor exists to prevent.
+    """
+
+
 def _download(size: int) -> float:
-    started = time.perf_counter()
-    received = 0
-    request = urllib.request.Request(DOWNLOAD_URL.format(size=size), headers=HEADERS)
-    with urllib.request.urlopen(request, timeout=60) as response:
-        while chunk := response.read(65536):
-            received += len(chunk)
-            if time.perf_counter() - started >= MAX_SECONDS_PER_DIRECTION:
-                break  # enough to measure the rate; the rest costs data and patience
-    return received / max(1e-6, time.perf_counter() - started)
+    refusals: list[str] = []
+    for template in DOWNLOAD_URLS:
+        started = time.perf_counter()
+        received = 0
+        request = urllib.request.Request(template.format(size=size), headers=HEADERS)
+        try:
+            with urllib.request.urlopen(request, timeout=30) as response:
+                while chunk := response.read(65536):
+                    received += len(chunk)
+                    if time.perf_counter() - started >= MAX_SECONDS_PER_DIRECTION:
+                        break  # enough to measure the rate; the rest costs data
+        except urllib.error.HTTPError as exc:
+            # The host answered and said no. Try the next one rather than blaming the
+            # connection that just successfully carried the refusal.
+            refusals.append(f"{urlsplit(template).netloc}: HTTP {exc.code}")
+            continue
+        except OSError as exc:
+            refusals.append(f"{urlsplit(template).netloc}: {exc}")
+            continue
+        if received:
+            return received / max(1e-6, time.perf_counter() - started)
+    raise TestHostUnavailable("; ".join(refusals) or "no host answered")
 
 
 def _upload(size: int) -> float:
