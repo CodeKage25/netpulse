@@ -3,6 +3,10 @@
 
 async function openDetail(metric) {
   if (!METRICS[metric]) return;
+  // The same wait every other linked view does. Without it a deep link opens before
+  // any source is resolved, and the panel queries "" — which returns nothing and reads
+  // as "no data" rather than "asked the wrong question".
+  await ready;
   state.detail = metric;
   state.detailMinutes = state.minutes;
   document.getElementById("modal-root").hidden = false;
@@ -32,11 +36,24 @@ async function renderDetail() {
   // Best and worst come from raw samples, never from the plotted series: latency
   // buckets keep the worst value in each, so the smallest of those maxima is not the
   // best reading — it is the best bad minute, which is a different and wrong number.
+  //
+  // And "best" is not "smallest". For latency and loss, less is better; for signal and
+  // throughput, more is. Without asking the metric which way it runs, a signal panel
+  // reports -96 dBm as its best hour and -90 as its worst, which is exactly backwards.
+  // The flag describes the stored metric, not the displayed one — loss is stored and
+  // success is shown, and reading the flag off the display inverts it again.
+  // Everything on this panel goes through the same transform, so a metric stored one
+  // way up and shown the other cannot disagree with itself.
+  const shown = value => (value == null ? null : toChart(value));
+  const bestRaw = spec.higherIsBetter ? dist.max : dist.min;
+  const worstRaw = spec.higherIsBetter ? dist.min : dist.max;
+  const best = shown(bestRaw);
+  const worst = shown(worstRaw);
   const heroes = [
     ["Current", live == null ? "–" : spec.tile(live)],
     ["Average", dist.mean == null ? "–" : spec.tile(dist.mean)],
-    ["Best", dist.min == null ? "–" : spec.tile(dist.min)],
-    ["Worst", dist.max == null ? "–" : spec.tile(dist.max)],
+    ["Best", bestRaw == null ? "–" : spec.tile(bestRaw)],
+    ["Worst", worstRaw == null ? "–" : spec.tile(worstRaw)],
   ];
 
   document.getElementById("modal").innerHTML = `
@@ -62,7 +79,13 @@ async function renderDetail() {
     [{ name: spec.label, color: css(spec.color), fill: css(spec.fill),
        points: series.points.map(v => v == null ? null : toChart(v)) }],
     { times: series.times, height: 200, format: spec.axisFmt,
-      tip: spec.chartFmt, floor: spec.floor ?? null });
-  histogram(document.getElementById("detail-hist"), dist.bins, css(spec.color),
+      tip: spec.chartFmt, floor: spec.floor ?? null, ceiling: spec.ceiling ?? null });
+  // Bins are raw, so they are relabelled through the metric's own formatter and, where
+  // the axis runs the other way, reversed — otherwise a success panel reads 100% on the
+  // left and 75% on the right while the bars climb the wrong way.
+  const bins = spec.invertAxis
+    ? [...dist.bins].reverse().map(bin => ({ ...bin, lo: bin.hi, hi: bin.lo }))
+    : dist.bins;
+  histogram(document.getElementById("detail-hist"), bins, css(spec.color),
     v => spec.tile(v) + " " + spec.unit, dist.overflowing);
 }

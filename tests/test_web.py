@@ -237,3 +237,44 @@ def test_the_page_surfaces_its_own_failures() -> None:
     app = code_of(ASSETS / "app.js")
     assert 'addEventListener("error"' in app
     assert 'addEventListener("unhandledrejection"' in app
+
+
+def test_every_metric_that_runs_upward_says_so() -> None:
+    """ "Best" is not "smallest". Without a declared direction a signal panel reports
+    -96 dBm as its best hour and -90 as its worst, which is exactly backwards."""
+    metrics = (ASSETS / "core" / "metrics.js").read_text()
+    for name in (
+        "signal.rsrp_dbm",
+        "signal.sinr_db",
+        "signal.rsrp_5g_dbm",
+        "signal.sinr_5g_db",
+        "traffic.down_bytes_s",
+        "traffic.up_bytes_s",
+    ):
+        block = metrics.split(f'"{name}": {{')[1].split("},")[0]
+        assert "higherIsBetter: true" in block, f"{name} does not declare its direction"
+
+
+def test_the_direction_flag_describes_the_stored_metric() -> None:
+    """loss.pct is stored as loss and shown as success. Reading the flag off the
+    display would invert best and worst a second time."""
+    metrics = (ASSETS / "core" / "metrics.js").read_text()
+    block = metrics.split('"loss.pct": {')[1].split("},")[0]
+    assert "higherIsBetter: false" in block  # less loss is better
+    assert "invertAxis: true" in block  # …but the panel is drawn the other way up
+    assert "toChart: v => 100 - v" in block
+
+
+def test_a_percentage_chart_declares_its_ceiling() -> None:
+    """Otherwise a chart of near-perfect values zooms into the last fraction of a
+    percent and turns ordinary noise into a mountain range — or runs the axis to 120."""
+    metrics = (ASSETS / "core" / "metrics.js").read_text()
+    assert "ceiling: 100" in metrics.split('"loss.pct": {')[1].split("},")[0]
+
+
+def test_every_linked_view_waits_for_a_resolved_source() -> None:
+    """A deep link that opens before sources resolve queries the empty string, which
+    returns nothing and reads as "no data" rather than "asked the wrong question"."""
+    for name in ("spectrum", "network", "usage", "detail"):
+        view = code_of(ASSETS / "views" / f"{name}.js")
+        assert "await ready" in view, f"{name}.js does not wait for a source"

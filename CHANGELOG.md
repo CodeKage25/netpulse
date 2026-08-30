@@ -49,3 +49,21 @@ The release that stopped guessing and went and checked.
   when a layer reaches upward.
 - The dashboard is ten authored files concatenated into one self-contained response, with
   tests holding the module boundaries.
+
+## Unreleased
+
+### Fixed — all four found by looking at rendered screenshots
+- **Latency was overstated roughly fivefold.** The probe tries several anycast targets
+  and reported the *worst* of them. Measured from Lagos, 8.8.8.8 answers in 20–40 ms
+  while 1.1.1.1 takes 130–145 — so one badly-routed destination was being reported as
+  the connection's latency, and it graded a healthy link an F. It now reports the
+  nearest reachable point; bucketing still keeps the worst value over *time*, which is
+  a claim about this connection rather than about somebody's routing.
+- **Jitter was measuring the gap between destinations.** Two steady targets 110 ms apart
+  are not 110 ms of jitter. It is computed per target now, worst reported.
+- **Best and worst were inverted for anything that runs upward.** The signal panel
+  called −96 dBm its best hour and −90 its worst. Metrics declare their direction.
+- **The ping-success panel plotted raw loss under a success heading**, so its chart and
+  histogram contradicted the figures above them, and its axis ran to 120%.
+- A deep-linked detail view opened before any source resolved and queried the empty
+  string — which returned nothing and read as "no data" rather than "wrong question".

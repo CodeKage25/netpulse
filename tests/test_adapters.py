@@ -296,3 +296,39 @@ def test_demo_produces_a_full_lte_shaped_reading_and_an_outage() -> None:
         except AdapterError:
             failures += 1
     assert failures > 0  # the scripted outage happened
+
+
+def test_latency_is_the_nearest_destination_not_the_furthest() -> None:
+    """The probe tries several anycast targets. They are different places, so taking
+    the worst answers "how far is the slowest thing I tried" rather than "how far is
+    the internet". Measured from Lagos, 8.8.8.8 answers in 30 ms while 1.1.1.1 takes
+    140 — reporting the max overstated latency fivefold and graded a healthy link F.
+    """
+    from netpulse.sources.probe import ProbeAdapter
+
+    timings = iter([140.0, 30.0, 141.0, 31.0])
+    adapter = ProbeAdapter(
+        "wan",
+        tcp=lambda host, port: next(timings),
+        dns=lambda resolver: 20.0,
+        find_gateway=lambda: None,
+    )
+    metrics = adapter.read().metrics
+    assert metrics["latency.internet_ms"] == 30.0
+    assert metrics["latency.internet_worst_ms"] == 141.0
+
+
+def test_jitter_is_measured_per_destination_not_across_them() -> None:
+    """Two targets 110 ms apart are not 110 ms of jitter; they are two destinations.
+    Jitter across them would report a rock-steady link as wildly unstable."""
+    from netpulse.sources.probe import ProbeAdapter
+
+    # 1.1.1.1 gets 140/142, 8.8.8.8 gets 30/32 — each steady, far apart from each other.
+    timings = iter([140.0, 30.0, 142.0, 32.0])
+    adapter = ProbeAdapter(
+        "wan",
+        tcp=lambda host, port: next(timings),
+        dns=lambda resolver: 20.0,
+        find_gateway=lambda: None,
+    )
+    assert adapter.read().metrics["jitter.internet_ms"] == 1.0

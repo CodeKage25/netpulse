@@ -11,6 +11,8 @@
 
 </div>
 
+![The NetPulse dashboard](docs/images/dashboard.png)
+
 NetPulse watches your internet connection, records what it sees, and tells you the
 truth about it — including when it does not know. It reads your router directly over
 the LAN, so it keeps working during an outage, which is exactly when you want to see
@@ -81,6 +83,8 @@ worst figures, its own time range, the full series, a **distribution histogram**
 from raw samples, and a plain-English explainer of what the number means and what moves
 it.
 
+![A metric detail view](docs/images/signal-detail.png)
+
 Below: throughput and latency charts with per-panel ranges, signal charts showing both
 legs of a 5G non-standalone connection, and a right-hand column of instruments —
 connection quality graded A–F, the data allowance, a rule-based diagnosis, uptime, and
@@ -102,6 +106,8 @@ arithmetic (TS 36.101 §5.7.3, TS 38.104 §5.4.2.1) and draws the stack in three
 dimensions: real positions, real bandwidths, coloured by SINR, receding through time.
 A test link shows five carriers — bands 20, 3, 7, 7 and n78 at 801, 1850, 2630, 2650 and
 3549 MHz — totalling 180 MHz.
+
+![The 3D spectrum view](docs/images/spectrum.png)
 
 Rendered in about a hundred lines of canvas. No WebGL, no library.
 
@@ -177,6 +183,8 @@ is useless when the machine watching your link is a Pi in a cupboard.
 
 Gaps stay empty rather than becoming zeros. The uptime report gives uptime **and**
 coverage separately, because 99.9% uptime over 3% coverage is not a 99.9% month.
+
+![Sources and export](docs/images/sources.png)
 
 ---
 

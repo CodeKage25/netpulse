@@ -124,10 +124,28 @@ class ProbeAdapter:
             except OSError:
                 failures += 1
         if timings:
-            metrics["latency.internet_ms"] = max(timings)
-            metrics["latency.internet_best_ms"] = min(timings)
+            # The nearest reachable point, not the furthest. These are different
+            # destinations, and taking the worst of them answers "how far away is the
+            # slowest thing I tried" rather than "how far away is the internet".
+            # Measured from Lagos: 8.8.8.8 answers in 20-40 ms while 1.1.1.1 takes
+            # 130-145 ms, so reporting the max overstated latency roughly fivefold and
+            # graded a healthy link an F.
+            #
+            # Spikes are still preserved — the *bucketing* keeps the worst value over
+            # time, which is a claim about this connection. The worst value across
+            # destinations is a claim about somebody's routing.
+            metrics["latency.internet_ms"] = min(timings)
+            metrics["latency.internet_worst_ms"] = max(timings)
             if len(timings) > 1:
-                metrics["jitter.internet_ms"] = pstdev(timings)
+                # Jitter across different destinations would measure the gap between
+                # them, so it is computed per target and the worst one reported.
+                per_target: dict[str, list[float]] = {}
+                for index, value in enumerate(timings):
+                    host, _ = INTERNET_TARGETS[index % len(INTERNET_TARGETS)]
+                    per_target.setdefault(host, []).append(value)
+                spreads = [pstdev(values) for values in per_target.values() if len(values) > 1]
+                if spreads:
+                    metrics["jitter.internet_ms"] = max(spreads)
         metrics["loss.pct"] = 100.0 * failures / ATTEMPTS
 
         for resolver in DNS_TARGETS:

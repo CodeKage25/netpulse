@@ -2,6 +2,7 @@
    metric is a row here rather than three places that must be kept in agreement. */
 const METRICS = {
   "traffic.down_bytes_s": {
+    higherIsBetter: true,
     label: "Download", unit: "Mbps", color: "--down", fill: "--down-fill",
     tile: m => fmt.mbps(m), caption: "current traffic",
     toChart: v => v * 8 / 1e6, chartFmt: v => v.toFixed(1) + " Mbps", axisFmt: fmt.axis,
@@ -12,6 +13,7 @@ const METRICS = {
       "capacity, run a speed test."],
   },
   "traffic.up_bytes_s": {
+    higherIsBetter: true,
     label: "Upload", unit: "Mbps", color: "--up", fill: "--up-fill",
     tile: m => fmt.mbps(m), caption: "current traffic",
     toChart: v => v * 8 / 1e6, chartFmt: v => v.toFixed(1) + " Mbps", axisFmt: fmt.axis,
@@ -34,6 +36,7 @@ const METRICS = {
       "worst value in each bucket rather than smoothing it away."],
   },
   "signal.rsrp_dbm": {
+    higherIsBetter: true,
     label: "Signal", unit: "dBm", color: "--mono", fill: "--mono-fill",
     tile: m => Math.round(m), caption: "RSRP at the router",
     chartFmt: v => v.toFixed(1) + " dBm", axisFmt: v => Math.round(v), floor: -120,
@@ -44,6 +47,7 @@ const METRICS = {
       "moves this number more than anything else you can do."],
   },
   "signal.sinr_db": {
+    higherIsBetter: true,
     label: "Quality", unit: "dB", color: "--accent", fill: "--accent-fill",
     tile: m => m.toFixed(0), caption: "SINR — higher is cleaner",
     chartFmt: v => v.toFixed(1) + " dB", axisFmt: v => Math.round(v), floor: -5,
@@ -54,6 +58,7 @@ const METRICS = {
       "throughput collapses even on a strong signal."],
   },
   "signal.rsrp_5g_dbm": {
+    higherIsBetter: true,
     label: "5G signal", unit: "dBm", color: "--down", fill: "--down-fill",
     tile: m => Math.round(m), caption: "RSRP on the 5G carrier",
     chartFmt: v => v.toFixed(1) + " dBm", axisFmt: v => Math.round(v), floor: -120,
@@ -64,6 +69,7 @@ const METRICS = {
       "anchor with a weak 5G leg still feels slow."],
   },
   "signal.sinr_5g_db": {
+    higherIsBetter: true,
     label: "5G quality", unit: "dB", color: "--accent", fill: "--accent-fill",
     tile: m => m.toFixed(0), caption: "SINR on the 5G carrier",
     chartFmt: v => v.toFixed(1) + " dB", axisFmt: v => Math.round(v), floor: -5,
@@ -74,12 +80,31 @@ const METRICS = {
       "crawls at busy hours."],
   },
   "loss.pct": {
-    label: "Ping success", unit: "%", color: "--good", fill: "--mono-fill",
-    tile: m => (100 - m).toFixed(0), caption: "last probe round",
-    chartFmt: v => v.toFixed(1) + "% lost", axisFmt: v => Math.round(v), floor: 0,
+    label: "Ping success",
+    unit: "%",
+    color: "--good",
+    fill: "--mono-fill",
+    // NOTE the direction: `higherIsBetter` describes the *stored* metric, which is
+    // loss — and less loss is better. The panel shows its inverse, and `tile` handles
+    // that. Setting this from the displayed value instead reported 50% as the best
+    // hour and 100% as the worst.
+    higherIsBetter: false,
+    invertAxis: true,
+    // The stored metric is loss; the panel is about success. `toChart` inverts it so
+    // the series, its axis and its distribution all agree with the figures above them
+    // — plotting raw loss under a heading that says "success" drew the panel upside
+    // down against its own numbers.
+    tile: m => (100 - m).toFixed(0),
+    toChart: v => 100 - v,
+    caption: "last probe round",
+    chartFmt: v => v.toFixed(1) + "% of probes answered",
+    axisFmt: v => Math.round(v),
+    floor: 0,
+    ceiling: 100,
     explain: ["What is packet loss?",
-      "The share of test packets that never came back. Steady loss above about 2% breaks " +
-      "calls and stalls downloads even when latency looks fine, because every lost packet " +
-      "has to be noticed and sent again."],
+      "The share of test packets that never came back, shown here the other way up as " +
+      "the share that did. Steady loss above about 2% breaks calls and stalls downloads " +
+      "even when latency looks fine, because every lost packet has to be noticed and " +
+      "sent again."],
   },
 };

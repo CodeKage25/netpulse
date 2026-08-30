@@ -34,15 +34,26 @@ function axis(lo, hi, divisions = 3) {
 }
 
 function chart(el, seriesList, opts) {
-  const { times, bands = [], format = fmt.axis, tip = fmt.ms, height = 190, floor = null } = opts;
+  const {
+    times, bands = [], format = fmt.axis, tip = fmt.ms, height = 190,
+    floor = null, ceiling = null,
+  } = opts;
   const W = 1000, H = height, pad = { l: 4, r: 4, t: 12, b: 8 };
   const n = Math.max(1, times.length - 1);
   const all = seriesList.flatMap(s => s.points).filter(v => v != null);
   const dataHi = all.length ? Math.max(...all) : 1;
   const dataLo = all.length ? Math.min(...all) : 0;
   const rawLo = floor != null ? Math.min(floor, dataLo) : (dataLo >= 0 ? 0 : dataLo * 1.08);
-  const rawHi = dataHi + (dataHi - rawLo) * 0.08 || 1;
-  const { base: lo, top, ticks: yTicks } = axis(rawLo, rawHi);
+  // A percentage tops out at 100 whatever the data did. Without a declared ceiling a
+  // chart of near-perfect values zooms into the last fraction of a percent and turns
+  // ordinary noise into a mountain range.
+  const rawHi = ceiling != null ? ceiling : (dataHi + (dataHi - rawLo) * 0.08 || 1);
+  const scale = axis(rawLo, rawHi);
+  // A declared ceiling is a real limit, not a hint: percentages do not go to 120, so
+  // the nice-number rounding is not allowed to invent headroom above one.
+  const lo = scale.base;
+  const top = ceiling != null ? Math.max(ceiling, dataHi) : scale.top;
+  const yTicks = ceiling != null ? scale.ticks.filter(t => t <= top + 1e-9) : scale.ticks;
   const x = i => pad.l + (i / n) * (W - pad.l - pad.r);
   const y = v => pad.t + (1 - (v - lo) / (top - lo)) * (H - pad.t - pad.b);
   const baseline = H - pad.b;
