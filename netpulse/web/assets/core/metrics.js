@@ -3,6 +3,7 @@
 const METRICS = {
   "traffic.down_bytes_s": {
     higherIsBetter: true,
+    extremes: ["Peak", "Quietest"],
     label: "Download", unit: "Mbps", color: "--down", fill: "--down-fill",
     tile: m => fmt.mbps(m), caption: "current traffic",
     toChart: v => v * 8 / 1e6, chartFmt: v => v.toFixed(1) + " Mbps", axisFmt: fmt.axis,
@@ -14,6 +15,7 @@ const METRICS = {
   },
   "traffic.up_bytes_s": {
     higherIsBetter: true,
+    extremes: ["Peak", "Quietest"],
     label: "Upload", unit: "Mbps", color: "--up", fill: "--up-fill",
     tile: m => fmt.mbps(m), caption: "current traffic",
     toChart: v => v * 8 / 1e6, chartFmt: v => v.toFixed(1) + " Mbps", axisFmt: fmt.axis,

@@ -278,3 +278,30 @@ def test_every_linked_view_waits_for_a_resolved_source() -> None:
     for name in ("spectrum", "network", "usage", "detail"):
         view = code_of(ASSETS / "views" / f"{name}.js")
         assert "await ready" in view, f"{name}.js does not wait for a source"
+
+
+def test_throughput_names_its_extremes_peak_and_quietest() -> None:
+    """Throughput measures demand, not quality. Calling an idle minute the "worst"
+    download contradicts the panel's own explainer, which says an idle link reads near
+    zero however fast it is."""
+    metrics = (ASSETS / "core" / "metrics.js").read_text()
+    for name in ("traffic.down_bytes_s", "traffic.up_bytes_s"):
+        block = metrics.split(f'"{name}": {{')[1].split("},")[0]
+        assert 'extremes: ["Peak", "Quietest"]' in block
+
+
+def test_quality_metrics_keep_best_and_worst() -> None:
+    """Latency and signal really do have a best and a worst; only demand does not."""
+    metrics = (ASSETS / "core" / "metrics.js").read_text()
+    for name in ("latency.internet_ms", "signal.rsrp_dbm"):
+        block = metrics.split(f'"{name}": {{')[1].split("},")[0]
+        assert "extremes:" not in block
+
+
+def test_a_tile_sparkline_shows_the_same_quantity_as_its_number() -> None:
+    """Ping success displays the inverse of what is stored. Without transforming the
+    sparkline too, the figure reads 100% while the line spikes upward on every packet
+    lost — the two disagreeing on the same tile."""
+    dashboard = code_of(ASSETS / "views" / "dashboard.js")
+    assert "shownSeries(spec, sp[key])" in dashboard
+    assert "spec.toChart" in dashboard

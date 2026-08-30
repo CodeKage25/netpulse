@@ -55,6 +55,14 @@ async function refresh() {
   firstPaintDone = true;
 }
 
+/* A tile's number and its sparkline must be the same quantity. Ping success shows the
+   inverse of what is stored, so without this the figure reads 100% while the line
+   spikes upward on every packet lost — the two disagreeing on the same tile. */
+function shownSeries(spec, points) {
+  if (!spec.toChart) return points;
+  return points.map(value => (value == null ? null : spec.toChart(value)));
+}
+
 function renderTiles(src) {
   const m = src.latest, sp = src.sparklines;
   let html = "";
@@ -63,7 +71,7 @@ function renderTiles(src) {
     html += `<button class="tile" data-metric="${key}"><span class="chev">›</span>
       <div class="label">${spec.label}</div>
       <div class="row"><span class="value">${spec.tile(m[key])}<span class="unit">${spec.unit}</span></span>
-      <span class="spark">${sp[key] ? spark(sp[key], css(spec.color)) : ""}</span></div>
+      <span class="spark">${sp[key] ? spark(shownSeries(spec, sp[key]), css(spec.color)) : ""}</span></div>
       <div class="caption">${spec.caption}</div></button>`;
   }
   // Some firmware reports a single monthly total, others a down/up pair. Adding a

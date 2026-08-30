@@ -49,11 +49,16 @@ async function renderDetail() {
   const worstRaw = spec.higherIsBetter ? dist.min : dist.max;
   const best = shown(bestRaw);
   const worst = shown(worstRaw);
+  // Some metrics measure how well the connection is working; others measure how much
+  // of it is being used. Calling an idle minute the "worst" download contradicts the
+  // explainer directly beneath it, which says an idle link reads near zero however
+  // fast it is. Those metrics name their extremes themselves.
+  const [highLabel, lowLabel] = spec.extremes || ["Best", "Worst"];
   const heroes = [
     ["Current", live == null ? "–" : spec.tile(live)],
     ["Average", dist.mean == null ? "–" : spec.tile(dist.mean)],
-    ["Best", bestRaw == null ? "–" : spec.tile(bestRaw)],
-    ["Worst", worstRaw == null ? "–" : spec.tile(worstRaw)],
+    [highLabel, bestRaw == null ? "–" : spec.tile(bestRaw)],
+    [lowLabel, worstRaw == null ? "–" : spec.tile(worstRaw)],
   ];
 
   document.getElementById("modal").innerHTML = `
