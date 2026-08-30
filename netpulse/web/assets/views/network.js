@@ -102,6 +102,11 @@ function renderNetwork(network, apps) {
       too. Splitting the connection total between devices by presence would produce a
       number for every row and a fact for none.</p></div>`}
 
+    <div class="sub-h">Where the data went</div>
+    <div class="sub-p">Last 24 hours on ${apps ? apps.host : "this machine"}, busiest
+      first — by service rather than by program.</div>
+    ${serviceRows(network.services || [])}
+
     <div class="sub-h">Applications on ${apps ? apps.host : "this machine"}</div>
     <div class="sub-p">Since the last sample, busiest first. This machine only —
       the router cannot see which programs are running on anything.</div>
@@ -112,6 +117,37 @@ function renderNetwork(network, apps) {
       <em>running</em> on it. Blending the two would produce a single list that is wrong
       in both directions, so they stay apart — and the totals here will not sum to the
       connection's throughput, because the other devices are not reporting theirs.</p></div>`;
+}
+
+/* "Which service" and "which program" are different questions. A browser is one
+   application whether it is streaming a film or idle, so a list of process names can
+   put Chrome at the top every day and never once explain the bill.
+
+   A name here is only as good as what the address said. Some destinations identify a
+   service outright; others are shared content networks carrying millions of unrelated
+   sites, and for those the honest caption is how the traffic travelled, not what it
+   was for. Rendering both the same way would imply a certainty that only half of them
+   have, so the uncertain ones say so on their own row. */
+function serviceRows(services) {
+  if (!services.length) {
+    return `<div class="empty">Nothing recorded yet — this fills in as traffic
+      is measured.</div>`;
+  }
+  const CAVEAT = {
+    network: "shared content network — the address does not say which site",
+    cloud: "rented hosting — the address does not say whose service",
+    "": "not in the address table",
+  };
+  return services.map(service => {
+    const caveat = service.identified ? "" : CAVEAT[service.kind] ?? CAVEAT[""];
+    return `<div class="row-item" style="align-items:center">
+      <span style="font-weight:600${service.identified ? "" : ";color:var(--text-2)"}">
+        ${service.key}</span>
+      ${caveat ? `<span class="when">${caveat}</span>` : ""}
+      <span style="flex:1"></span>
+      <span class="when">↓ ${fmt.bytes(service.down)} · ↑ ${fmt.bytes(service.up)}</span>
+    </div>`;
+  }).join("");
 }
 
 /* Blocking is a write to somebody's router, so it is confirmed, then re-read rather

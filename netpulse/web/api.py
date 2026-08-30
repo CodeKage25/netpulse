@@ -34,6 +34,7 @@ from netpulse.config import SourceConfig
 from netpulse.core.clock import Clock, utcnow
 from netpulse.core.host import local_macs
 from netpulse.core.model import Agg
+from netpulse.core.services import describe
 from netpulse.core.storage import Store
 from netpulse.monitor import Collector
 from netpulse.sources import Blocker, build
@@ -408,7 +409,38 @@ class Api:
             "per_device_bytes": "router"
             if from_router
             else ("self" if any(d["measured_here"] for d in devices) else "none"),
+            "services": self.services(source, hours),
         }
+
+    def services(self, source: str, hours: float = 24) -> list[dict[str, Any]]:
+        """Where this machine's data went, busiest first.
+
+        "Which application" and "which service" are different questions with different
+        answers: a browser is one application whether it is streaming a film or sitting
+        idle, so a list of process names can put Chrome at the top every day and never
+        once explain the bill.
+
+        Each row says whether its name identifies a site or only the network the traffic
+        crossed. A great deal of the internet sits behind shared content networks where
+        the address genuinely does not say which site was on the other end, and a screen
+        that renders "Netflix" and "Cloudflare" identically implies it does.
+        """
+        return self._service_rows(source, self._clock() - timedelta(hours=hours))
+
+    def _service_rows(self, source: str, since: datetime) -> list[dict[str, Any]]:
+        found = []
+        for key, down, up in self.store.usage_by_key(source, "service", since)[:25]:
+            _, service = describe(key)
+            found.append(
+                {
+                    "key": key,
+                    "down": down,
+                    "up": up,
+                    "kind": service.kind,
+                    "identified": service.identifies_a_site,
+                }
+            )
+        return found
 
     def _host_usage(self) -> tuple[float | None, float | None]:
         """This machine's traffic since the last sample, or (None, None) if unknown."""
@@ -498,6 +530,8 @@ class Api:
                 {"day": day, "down": down, "up": up}
                 for day, down, up in self.store.usage_by_day(source, "app", start_of_day)
             ],
+            # Where the data went, rather than what was running when it went.
+            "services": self._service_rows(source, start_of_day),
             "host": platform.node(),
         }
 

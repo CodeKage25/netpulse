@@ -11,6 +11,7 @@ from netpulse.alerting.alerts import AlertEngine
 from netpulse.alerting.channels import Channels
 from netpulse.alerting.notify import Notifier
 from netpulse.analysis.apps import AppMonitor
+from netpulse.analysis.destinations import DestinationMonitor
 from netpulse.analysis.insights import diagnose
 from netpulse.config import Config, SourceConfig, load, save_sources, warn_if_exposed
 from netpulse.core.clock import utcnow
@@ -51,6 +52,7 @@ def run(args: argparse.Namespace) -> int:
         else None,
         channels=Channels(list(config.channels)) if config.channels else None,
         apps=AppMonitor(),
+        destinations=DestinationMonitor(),
     )
     api = Api(store, collector, config.interval_s)
 

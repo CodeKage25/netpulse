@@ -12,6 +12,7 @@ from netpulse.alerting.notify import Notifier
 from netpulse.analysis.allowance import Plan, crossed, format_bytes
 from netpulse.analysis.allowance import assess as assess_allowance
 from netpulse.analysis.apps import AppMonitor
+from netpulse.analysis.destinations import DestinationMonitor
 from netpulse.core.clock import Clock, utcnow
 from netpulse.core.model import EventKind, Reading, Severity
 from netpulse.core.storage import Store
@@ -55,6 +56,7 @@ class Collector:
         plan: Plan | None = None,
         alerts: AlertEngine | None = None,
         apps: AppMonitor | None = None,
+        destinations: DestinationMonitor | None = None,
         channels: Channels | None = None,
     ) -> None:
         self.store = store
@@ -69,6 +71,9 @@ class Collector:
         #: Per-application usage on this machine, recorded so the history can be asked
         #: what was using the connection last Tuesday rather than only right now.
         self._apps = apps
+        #: Per-service usage on this machine. The application answers "what was running";
+        #: this answers "what was it talking to", which is the question a bill raises.
+        self._destinations = destinations
         #: Last known allowance fraction per source, so a threshold announces itself
         #: once on the way past rather than every poll while sitting above it.
         self._allowance_seen: dict[str, float] = {}
@@ -250,6 +255,18 @@ class Collector:
         ]
         if devices:
             self.store.record_usage(name, "device", devices, at=self._clock())
+
+        if self._destinations is not None and self._destinations.available:
+            with suppress(Exception):  # sampling must never stall a poll
+                self.store.record_usage(
+                    name,
+                    "service",
+                    [
+                        (use.name, use.down_bytes, use.up_bytes)
+                        for use in self._destinations.poll()
+                    ],
+                    at=self._clock(),
+                )
 
         if self._apps is None or not self._apps.available:
             return
