@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 
 import pytest
 
-from netpulse.analysis.allowance import assess, crossed, cycle_start, travelled
+from netpulse.analysis.allowance import assess, crossed, cycle_start, cycles, travelled
 from netpulse.core.storage import Store
 from tests.conftest import Clock
 
@@ -378,3 +378,66 @@ def test_a_reset_within_a_day_is_still_counted(store: Store, clock: Clock) -> No
 
     days = by_day(store, "mtn", datetime(2026, 8, 12, tzinfo=UTC), clock.now)
     assert days[0][1] == pytest.approx(5 * GB)  # 2 before the reset, 3 after
+
+
+# ------------------------------------------------------------------ completed cycles
+
+
+def odometer(store: Store, clock: Clock, values: list[float], every_s: int = 300) -> None:
+    for value in values:
+        store.record("mtn", {"data.month_total_bytes": value}, at=clock.now)
+        clock.advance(seconds=every_s)
+
+
+def test_a_finished_cycle_reports_the_routers_count_not_what_we_watched(
+    store: Store, clock: Clock
+) -> None:
+    """The whole point of reading a counter. NetPulse arrived on the 29th and the month
+    ended on the 1st, but the router had been counting since the 1st before — so the
+    answer covers 26 days nobody observed. Summing our own recordings would have said
+    22 GB and looked like the same question answered."""
+    odometer(store, clock, [23.3e9, 30.0e9, 45.5e9, 1.9e9, 2.0e9])
+    found = cycles(store, "mtn", clock.now - timedelta(days=30), clock.now)
+
+    assert len(found) == 2
+    assert found[0].used_bytes == 45.5e9
+    assert found[0].complete is True
+    assert found[0].saw_the_end is True
+    # …and it says plainly that it did not watch the beginning.
+    assert found[0].saw_the_start is False
+
+
+def test_the_running_cycle_is_not_reported_as_a_total(store: Store, clock: Clock) -> None:
+    """A month in progress is not a month. Marking it complete would put a number in a
+    column that means "final" beside one that is still climbing."""
+    odometer(store, clock, [1.0e9, 2.0e9, 3.0e9])
+    running = cycles(store, "mtn", clock.now - timedelta(days=30), clock.now)[-1]
+    assert running.complete is False
+    assert running.ended_at is None
+    assert running.used_bytes == 3.0e9
+
+
+def test_a_cycle_that_started_while_watching_says_so(store: Store, clock: Clock) -> None:
+    """The second cycle onwards is anchored on a reset NetPulse actually saw, so there
+    is no unwatched head to caveat."""
+    odometer(store, clock, [40.0e9, 1.0e9, 5.0e9])
+    found = cycles(store, "mtn", clock.now - timedelta(days=30), clock.now)
+    assert found[-1].saw_the_start is True
+
+
+def test_firmware_recomputing_a_byte_lower_does_not_start_a_new_month(
+    store: Store, clock: Clock
+) -> None:
+    """A counter that ticks down fractionally is not a billing cycle rolling over, and
+    treating it as one would cut a month in half and report both halves as totals."""
+    odometer(store, clock, [40.00e9, 39.99e9, 41.0e9])
+    found = cycles(store, "mtn", clock.now - timedelta(days=30), clock.now)
+    assert len(found) == 1
+    assert found[0].used_bytes == 41.0e9
+
+
+def test_a_source_with_no_odometer_reports_no_cycles(store: Store, clock: Clock) -> None:
+    """A probe measures reachability and has no counter to read. Returning a zero would
+    claim a month of no usage on a connection nobody metered."""
+    store.record("wan", {"latency.internet_ms": 20.0}, at=clock.now)
+    assert cycles(store, "wan", clock.now - timedelta(days=30), clock.now) == []

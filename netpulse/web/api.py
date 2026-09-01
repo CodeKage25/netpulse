@@ -19,7 +19,7 @@ from contextlib import suppress
 from datetime import datetime, timedelta
 from typing import Any
 
-from netpulse.analysis.allowance import Plan
+from netpulse.analysis.allowance import Plan, cycles
 from netpulse.analysis.allowance import assess as assess_allowance
 from netpulse.analysis.allowance import by_day as usage_by_day
 from netpulse.analysis.apps import AppMonitor
@@ -184,9 +184,11 @@ class Api:
         limit = self.plan.limit_bytes if self.plan else None
         reset_day = self.plan.reset_day if self.plan else 1
         result = assess_allowance(self.store, source, self._clock(), limit, reset_day)
+        finished = self._finished_cycles(source)
         if result is None:
-            return {"allowance": None}
+            return {"allowance": None, "past_cycles": finished}
         return {
+            "past_cycles": finished,
             "allowance": {
                 "used_bytes": result.used_bytes,
                 "limit_bytes": result.limit_bytes,
@@ -201,6 +203,36 @@ class Api:
                 "on_track": result.on_track,
             }
         }
+
+    def _finished_cycles(self, source: str, back_days: float = 400) -> list[dict[str, Any]]:
+        """Months the router has already closed, newest first.
+
+        Read off the router's own counter rather than summed from what NetPulse
+        recorded, which is what makes it answerable at all on a connection this tool has
+        only just started watching: the odometer was running for the whole cycle, so its
+        value when the month rolled over is the month's total, including every day
+        nobody was here to observe.
+
+        Each row carries whether NetPulse saw the cycle *end*, because that is the one
+        that decides what the number means. Seen, it is the router's final count. Missed,
+        the cycle closed inside a gap and the figure is only the highest reading anyone
+        saw — a floor, and labelled as one.
+        """
+        now = self._clock()
+        found = []
+        for cycle in cycles(self.store, source, now - timedelta(days=back_days), now):
+            if not cycle.complete:
+                continue
+            found.append(
+                {
+                    "used_bytes": cycle.used_bytes,
+                    "ended_at": cycle.ended_at.isoformat() if cycle.ended_at else None,
+                    "watched_from": cycle.watched_from.isoformat(),
+                    "saw_the_end": cycle.saw_the_end,
+                    "saw_the_start": cycle.saw_the_start,
+                }
+            )
+        return list(reversed(found))
 
     def prometheus(self) -> str:
         latest: dict[str, dict[str, float]] = {}

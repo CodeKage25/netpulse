@@ -98,6 +98,90 @@ class Allowance:
         return self.projected_bytes <= self.limit_bytes
 
 
+@dataclass(frozen=True)
+class Cycle:
+    """One run of the router's own counter, from a reset to the next one.
+
+    Cycles are found in the readings rather than imposed from the calendar, because the
+    router's month is whatever the router says it is. This one rolled over at 03:05 on
+    the first, not at midnight, and a report that assumed midnight would have put the
+    last three hours of August on the wrong side of the line.
+    """
+
+    used_bytes: float
+    #: The first reading of this run — the reset that started it, or where NetPulse
+    #: happened to arrive when the cycle was already under way.
+    watched_from: datetime
+    #: When the reset that closed this cycle was observed. None while it still runs.
+    ended_at: datetime | None
+    #: Whether NetPulse saw the cycle end. When it did, `used_bytes` is the router's own
+    #: final count. When it did not, the cycle ended inside a gap and this is only the
+    #: highest reading anybody saw — a floor, not a total.
+    saw_the_end: bool
+    #: Whether NetPulse saw the cycle begin. Almost always false for the oldest one, and
+    #: it matters far less than it looks: the counter was running the whole time
+    #: regardless, so the figure still covers the days nobody watched. That is the whole
+    #: reason for reading a counter instead of summing observations.
+    saw_the_start: bool
+
+    @property
+    def complete(self) -> bool:
+        return self.ended_at is not None
+
+
+#: A drop below this fraction of the running peak is a reset rather than noise. An
+#: odometer does not go backwards on its own, so almost any decrease qualifies; the
+#: margin exists only so firmware that recomputes and lands a byte lower does not get
+#: treated as the start of a new month.
+RESET_RATIO = 0.95
+
+
+def cycles(store: Store, source: str, since: datetime, now: datetime) -> list[Cycle]:
+    """Every run of the odometer between resets, oldest first.
+
+    This is what answers "how much did I use last month" on a connection NetPulse has
+    only just started watching. The counter was running long before this tool was, so
+    its value at the moment the month rolled over is the month's total — including every
+    day nobody observed. Summing what NetPulse itself recorded would answer a much
+    smaller question while looking like an answer to this one.
+    """
+    readings = store.stamped(source, TOTAL_METRIC, since, now)
+    if not readings:
+        return []
+
+    found: list[Cycle] = []
+    run_start = readings[0][0]
+    peak = readings[0][1]
+    saw_start = False
+    for at, value in readings[1:]:
+        if value < peak * RESET_RATIO:
+            found.append(
+                Cycle(
+                    used_bytes=peak,
+                    watched_from=run_start,
+                    # The boundary lies somewhere between the previous reading and this
+                    # one. Reporting when the reset was *observed* is the honest version:
+                    # it is a fact about the recording rather than a guess at the event.
+                    ended_at=at,
+                    saw_the_end=True,
+                    saw_the_start=saw_start,
+                )
+            )
+            run_start, peak, saw_start = at, value, True
+            continue
+        peak = max(peak, value)
+    found.append(
+        Cycle(
+            used_bytes=peak,
+            watched_from=run_start,
+            ended_at=None,
+            saw_the_end=False,
+            saw_the_start=saw_start,
+        )
+    )
+    return found
+
+
 def _odometer(store: Store, source: str, since: datetime) -> list[float]:
     """The odometer series, from whichever pair of fields this firmware publishes.
 

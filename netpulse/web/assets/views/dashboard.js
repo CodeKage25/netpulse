@@ -188,9 +188,11 @@ async function drawAllowance() {
   const source = state.owner["data.month_total_bytes"] || state.owner["data.month_down_bytes"];
   const panel = document.getElementById("allowance-panel");
   if (!source) { panel.hidden = true; return; }
-  const { allowance } = await json(`/api/allowance?source=${encodeURIComponent(source)}`);
+  const answer = await json(`/api/allowance?source=${encodeURIComponent(source)}`);
+  const { allowance } = answer;
   if (!allowance) { panel.hidden = true; return; }
   panel.hidden = false;
+  const past = pastCycles(answer.past_cycles || []);
 
   const used = fmt.bytes(allowance.used_bytes);
   const elapsed = Math.min(1, allowance.days_elapsed / allowance.days_total);
@@ -206,7 +208,8 @@ async function drawAllowance() {
         <span class="of">used this cycle</span></div>
       <div class="verdict" style="color:var(--text-3)">
         Add <code>limit_gb</code> under <code>[plan]</code> in your config to track it
-        against your allowance.</div>`;
+        against your allowance.</div>
+      ${past}`;
     return;
   }
 
@@ -229,7 +232,46 @@ async function drawAllowance() {
     <div style="font-size:11px;color:var(--text-3)">
       ${(elapsed * 100).toFixed(0)}% of the cycle elapsed${
         allowance.rate_per_day ? ` · ${fmt.bytes(allowance.rate_per_day)}/day so far` : ""}</div>
-    ${verdict}`;
+    ${verdict}
+    ${past}`;
+}
+
+/* Months the router has already closed.
+
+   These come off the router's own counter rather than from anything NetPulse added up,
+   which is what makes them answerable at all after two days of watching: the odometer
+   was running for the whole cycle, so its value when the month rolled over is the
+   month's total — including every day before this tool existed. A row says so, because
+   "45.5 GB" and "45.5 GB, of which we watched three days" invite the same trust and
+   only one has earned it. */
+function pastCycles(cycles) {
+  if (!cycles.length) return "";
+  const rows = cycles.map(cycle => {
+    const ended = new Date(cycle.ended_at);
+    // The cycle is named for the month it *ended* in only when it rolled over in the
+    // first days of one; otherwise the month it spent its life in is the honest label.
+    const named = new Date(ended.getTime() - 86400000 * 2)
+      .toLocaleDateString([], { month: "long", year: "numeric" });
+    // The month name assumes a cycle that rolls near the first, which is the common
+    // case but is still an inference. The date it rolled over is a fact, so it is shown
+    // beside the name and the reader can check one against the other.
+    const rolled = ended.toLocaleString([], {
+      month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+    const caveat = !cycle.saw_the_end
+      ? `<span class="when" style="color:var(--warning)">at least this much — the cycle
+         ended while nothing was recording</span>`
+      : !cycle.saw_the_start
+        ? `<span class="when">rolled over ${rolled} · the router's own count, including
+           days before NetPulse was watching</span>`
+        : `<span class="when">rolled over ${rolled} · watched end to end</span>`;
+    return `<div class="row-item" style="align-items:center">
+      <span style="font-weight:600">${named}</span>
+      ${caveat}
+      <span style="flex:1"></span>
+      <span style="font-variant-numeric:tabular-nums">${fmt.bytes(cycle.used_bytes)}</span>
+    </div>`;
+  }).join("");
+  return `<div class="sub-h" style="margin-top:16px">Finished cycles</div>${rows}`;
 }
 
 async function drawUptime() {

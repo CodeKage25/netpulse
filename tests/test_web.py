@@ -355,3 +355,21 @@ def test_a_service_label_survives_the_round_trip_through_the_store() -> None:
     assert identify_name("Cloudflare").kind == "network"
     assert identify_name("Microsoft Azure").kind == "cloud"
     assert identify_name("165.66.149.34").known is False
+
+
+def test_a_cycle_that_ended_unobserved_is_not_shown_as_a_total() -> None:
+    """If the month rolled over while nothing was recording, the figure is the highest
+    reading anybody saw — a floor. Printing it in the same style as a watched cycle
+    would present a lower bound as a settled bill."""
+    view = code_of(ASSETS / "views" / "dashboard.js")
+    assert "cycle.saw_the_end" in view
+    assert "at least this much" in (ASSETS / "views" / "dashboard.js").read_text()
+
+
+def test_a_finished_cycle_says_whether_it_predates_the_recording() -> None:
+    """"45.5 GB" and "45.5 GB, of which we watched three days" invite the same trust,
+    and only one has earned it. The odometer makes the number right either way — the
+    caveat is about what the reader should conclude, not about the arithmetic."""
+    view = (ASSETS / "views" / "dashboard.js").read_text()
+    assert "days before NetPulse" in view
+    assert "watched end to end" in view
